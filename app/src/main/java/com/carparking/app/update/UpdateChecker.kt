@@ -71,7 +71,7 @@ object UpdateChecker {
     }
 
     /** Compare deux versions "x.y.z" — retourne true si [remote] > [current]. */
-    private fun isNewer(remote: String, current: String): Boolean {
+    internal fun isNewer(remote: String, current: String): Boolean {
         val r = remote.split(".").map { it.toIntOrNull() ?: 0 }
         val c = current.split(".").map { it.toIntOrNull() ?: 0 }
         val len = maxOf(r.size, c.size)

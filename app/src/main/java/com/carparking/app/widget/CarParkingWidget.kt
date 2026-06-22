@@ -169,15 +169,5 @@ private fun ActiveParkingState(car: Car?, parking: ParkingRecord) {
     }
 }
 
-private fun formatDuration(parkedAtMs: Long): String {
-    val diff    = System.currentTimeMillis() - parkedAtMs
-    val minutes = diff / 60_000
-    val hours   = minutes / 60
-    val days    = hours / 24
-    return when {
-        days > 0    -> "${days}j ${hours % 24}h"
-        hours > 0   -> "${hours}h${minutes % 60}min"
-        minutes > 0 -> "${minutes}min"
-        else        -> "à l'instant"
-    }
-}
+private fun formatDuration(parkedAtMs: Long): String =
+    com.carparking.app.utils.formatElapsedDuration(parkedAtMs, withPrefix = false)

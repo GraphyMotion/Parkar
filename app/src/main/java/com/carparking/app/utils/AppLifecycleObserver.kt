@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
+import com.carparking.app.bluetooth.BluetoothPreferences
 import com.carparking.app.notification.AutoParkNotification
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +32,9 @@ class AppLifecycleObserver(
         private const val GRACE_DELAY_MS = 5_000L
         private const val KEY_LAST_PROMPT = "last_prompt_time"
         private const val PROMPT_COOLDOWN_MS = 30 * 60 * 1000L // 30 min cooldown
+        // Fenêtre pendant laquelle une sauvegarde Bluetooth peut être en cours
+        // (GPS + géocodage) : évite de proposer une sauvegarde manuelle en double
+        private const val BLUETOOTH_SAVE_WINDOW_MS = 30_000L
     }
 
     override fun onStop(owner: LifecycleOwner) {
@@ -56,6 +60,10 @@ class AppLifecycleObserver(
         // Cooldown check
         val lastPrompt = prefs.getLong(KEY_LAST_PROMPT, 0)
         if (System.currentTimeMillis() - lastPrompt < PROMPT_COOLDOWN_MS) return false
+
+        // Une sauvegarde automatique Bluetooth est peut-être en cours (GPS + géocodage) :
+        // attendre plutôt que de proposer une sauvegarde manuelle en double
+        if (BluetoothPreferences.hasRecentDisconnectAttempt(appContext, BLUETOOTH_SAVE_WINDOW_MS)) return false
 
         val db = com.carparking.app.data.database.AppDatabase.getDatabase(appContext)
         val cars = db.carDao().getAllCarsSync()

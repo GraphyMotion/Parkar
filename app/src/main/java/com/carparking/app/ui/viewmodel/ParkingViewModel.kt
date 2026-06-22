@@ -103,6 +103,41 @@ class ParkingViewModel(application: Application) : AndroidViewModel(application)
         db.parkingPhotoDao().deletePhoto(photo)
     }
 
+    /**
+     * Corrige la position/adresse/note d'un stationnement existant
+     * (ex: GPS imprécis au moment de se garer) et met à jour la notification
+     * persistante et le widget si ce stationnement est actif.
+     */
+    fun correctParking(
+        parking: ParkingRecord,
+        newLatitude: Double,
+        newLongitude: Double,
+        newAddress: String?,
+        newNote: String?,
+        context: Context,
+        carName: String
+    ) = viewModelScope.launch {
+        val updated = parking.copy(
+            latitude = newLatitude,
+            longitude = newLongitude,
+            address = newAddress,
+            note = newNote
+        )
+        repository.updateParking(updated)
+        if (updated.isActive) {
+            OngoingParkingNotification.show(
+                context     = context,
+                carId       = updated.carId,
+                carName     = carName,
+                address     = updated.address,
+                latitude    = updated.latitude,
+                longitude   = updated.longitude,
+                parkedSince = updated.parkedAt
+            )
+            CarParkingWidget().updateAll(context)
+        }
+    }
+
     private fun scheduleReminder(
         context: Context,
         carName: String,

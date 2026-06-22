@@ -21,6 +21,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.carparking.app.data.model.Car
+import com.carparking.app.ui.components.CrashLogsCard
 import com.carparking.app.ui.components.UpdateCheckCard
 import com.carparking.app.ui.navigation.Screen
 import com.carparking.app.ui.viewmodel.CarViewModel
@@ -67,6 +68,7 @@ fun CarListScreen(navController: NavController) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)
             ) {
+                CrashLogsCard(modifier = Modifier.padding(bottom = 16.dp))
                 UpdateCheckCard()
                 Spacer(Modifier.height(16.dp))
                 Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
@@ -97,6 +99,7 @@ fun CarListScreen(navController: NavController) {
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                item { CrashLogsCard() }
                 item { UpdateCheckCard() }
                 items(cars, key = { it.id }) { car ->
                     CarListItem(

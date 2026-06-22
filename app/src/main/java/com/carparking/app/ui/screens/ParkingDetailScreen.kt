@@ -28,8 +28,12 @@ import com.carparking.app.ui.navigation.Screen
 import com.carparking.app.ui.theme.ParkingGreen
 import com.carparking.app.ui.viewmodel.CarViewModel
 import com.carparking.app.ui.viewmodel.ParkingViewModel
+import com.carparking.app.utils.LocationUtils
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -62,6 +66,7 @@ fun ParkingDetailScreen(navController: NavController, carId: Int) {
 
     var showArriveDialog by remember { mutableStateOf(false) }
     var showCompass by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
 
     // Permission GPS — demandée quand on bascule sur l'onglet Boussole
     // La boussole gère elle-même les mises à jour continues
@@ -104,6 +109,13 @@ fun ParkingDetailScreen(navController: NavController, carId: Int) {
                     }
                 },
                 actions = {
+                    // Corriger la position
+                    parking?.let {
+                        IconButton(onClick = { showEditDialog = true }) {
+                            Icon(Icons.Filled.EditLocationAlt, "Corriger la position",
+                                tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
                     // Partager
                     parking?.let { p ->
                         IconButton(onClick = { shareParking(p) }) {
@@ -286,6 +298,110 @@ fun ParkingDetailScreen(navController: NavController, carId: Int) {
             }
         )
     }
+
+    if (showEditDialog && parking != null) {
+        EditParkingDialog(
+            parking = parking!!,
+            carName = car?.name ?: "votre voiture",
+            onDismiss = { showEditDialog = false },
+            onSave = { lat, lng, address, note ->
+                parkingVm.correctParking(
+                    parking = parking!!,
+                    newLatitude = lat,
+                    newLongitude = lng,
+                    newAddress = address,
+                    newNote = note,
+                    context = context,
+                    carName = car?.name ?: "votre voiture"
+                )
+                showEditDialog = false
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditParkingDialog(
+    parking: ParkingRecord,
+    carName: String,
+    onDismiss: () -> Unit,
+    onSave: (lat: Double, lng: Double, address: String?, note: String?) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var latitude by remember { mutableStateOf(parking.latitude) }
+    var longitude by remember { mutableStateOf(parking.longitude) }
+    var address by remember { mutableStateOf(parking.address ?: "") }
+    var note by remember { mutableStateOf(parking.note ?: "") }
+    var isRelocating by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.EditLocationAlt, contentDescription = null) },
+        title = { Text("Corriger le stationnement") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "GPS actuel : %.6f, %.6f".format(latitude, longitude),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(
+                    onClick = {
+                        isRelocating = true
+                        scope.launch {
+                            val loc = LocationUtils.getCurrentLocation(context)
+                            if (loc != null) {
+                                latitude = loc.latitude
+                                longitude = loc.longitude
+                                val geo = withContext(Dispatchers.IO) {
+                                    LocationUtils.getAddressFromCoordinates(context, loc.latitude, loc.longitude)
+                                }
+                                if (!geo.isNullOrBlank()) address = geo
+                            }
+                            isRelocating = false
+                        }
+                    },
+                    enabled = !isRelocating,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (isRelocating) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Localisation…")
+                    } else {
+                        Icon(Icons.Filled.MyLocation, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Utiliser ma position actuelle")
+                    }
+                }
+                OutlinedTextField(
+                    value = address,
+                    onValueChange = { address = it },
+                    label = { Text("Adresse") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Note") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2, maxLines = 4
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onSave(latitude, longitude, address.trim().ifEmpty { null }, note.trim().ifEmpty { null })
+            }) { Text("Enregistrer", fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Annuler") }
+        }
+    )
 }
 
 @Composable

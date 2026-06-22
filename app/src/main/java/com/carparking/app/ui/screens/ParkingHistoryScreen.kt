@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -25,17 +26,28 @@ import com.carparking.app.ui.theme.ParkingGreen
 import com.carparking.app.ui.theme.ParkingOrange
 import com.carparking.app.ui.viewmodel.CarViewModel
 import com.carparking.app.ui.viewmodel.ParkingViewModel
+import com.carparking.app.utils.ExportUtils
 import java.text.SimpleDateFormat
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ParkingHistoryScreen(navController: NavController, carId: Int) {
+    val context = LocalContext.current
     val carVm: CarViewModel = viewModel()
     val parkingVm: ParkingViewModel = viewModel()
     val cars by carVm.cars.collectAsStateWithLifecycle()
     val car = cars.firstOrNull { it.id == carId }
     val records by parkingVm.getParkingsByCar(carId).collectAsStateWithLifecycle(initialValue = emptyList())
+
+    var query by remember { mutableStateOf("") }
+    val filteredRecords = remember(records, query) {
+        if (query.isBlank()) records
+        else records.filter {
+            it.address?.contains(query, ignoreCase = true) == true ||
+            it.note?.contains(query, ignoreCase = true) == true
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -52,6 +64,16 @@ fun ParkingHistoryScreen(navController: NavController, carId: Int) {
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Filled.ArrowBack, "Retour")
+                    }
+                },
+                actions = {
+                    if (records.isNotEmpty()) {
+                        IconButton(onClick = {
+                            ExportUtils.shareAsCsv(context, car?.name ?: "voiture", filteredRecords)
+                        }) {
+                            Icon(Icons.Filled.Share, "Exporter en CSV",
+                                tint = MaterialTheme.colorScheme.primary)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -81,16 +103,44 @@ fun ParkingHistoryScreen(navController: NavController, carId: Int) {
                 item { StatsCard(records = records) }
 
                 item {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = { Text("Rechercher par adresse ou note…") },
+                        leadingIcon = { Icon(Icons.Filled.Search, null) },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = { query = "" }) {
+                                    Icon(Icons.Filled.Clear, "Effacer")
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                }
+
+                item {
                     Text(
-                        "Tous les stationnements (${records.size})",
+                        if (query.isBlank()) "Tous les stationnements (${filteredRecords.size})"
+                        else "Résultats (${filteredRecords.size}/${records.size})",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(top = 4.dp)
                     )
                 }
 
-                items(records, key = { it.id }) { record ->
-                    HistoryItem(record = record)
+                if (filteredRecords.isEmpty()) {
+                    item {
+                        Text("Aucun résultat pour « $query »",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    items(filteredRecords, key = { it.id }) { record ->
+                        HistoryItem(record = record)
+                    }
                 }
 
                 item { Spacer(Modifier.height(16.dp)) }

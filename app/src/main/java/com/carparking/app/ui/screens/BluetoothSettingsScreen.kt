@@ -1,4 +1,4 @@
-﻿package com.carparking.app.ui.screens
+package com.carparking.app.ui.screens
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothManager
@@ -20,14 +20,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.carparking.app.bluetooth.BluetoothMonitorService
 import com.carparking.app.bluetooth.BluetoothPreferences
+import com.carparking.app.data.model.Car
+import com.carparking.app.ui.viewmodel.CarViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
@@ -37,17 +41,18 @@ import com.google.accompanist.permissions.shouldShowRationale
 @Composable
 fun BluetoothSettingsScreen(navController: NavController) {
     val context = LocalContext.current
+    val carVm: CarViewModel = viewModel()
+    val cars by carVm.cars.collectAsStateWithLifecycle()
+
     var btEnabled by remember { mutableStateOf(BluetoothPreferences.isBluetoothAutoParkEnabled(context)) }
-    var savedDeviceName by remember { mutableStateOf(BluetoothPreferences.getSavedDeviceName(context)) }
-    var savedDeviceAddress by remember { mutableStateOf(BluetoothPreferences.getSavedDeviceAddress(context)) }
-    var showDeviceList by remember { mutableStateOf(false) }
+    var links by remember { mutableStateOf(BluetoothPreferences.getLinks(context)) }
+    var carForDevicePicker by remember { mutableStateOf<Car?>(null) }
 
     // BLUETOOTH_CONNECT est une permission runtime sur Android 12+ (API 31+)
     val btPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         rememberPermissionState(android.Manifest.permission.BLUETOOTH_CONNECT)
     } else null
     val hasBtPermission = btPermission?.status?.isGranted ?: true
-    var pendingEnable by remember { mutableStateOf(false) }
 
     // Localisation en arrière-plan ("Tout le temps") — indispensable pour capturer le GPS
     // quand la voiture se déconnecte alors que l'appli est fermée (Android 10+)
@@ -79,18 +84,7 @@ fun BluetoothSettingsScreen(navController: NavController) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Dès que la permission est accordée, continuer l'activation si l'utilisateur avait basculé le toggle
-    LaunchedEffect(hasBtPermission) {
-        if (hasBtPermission && pendingEnable) {
-            pendingEnable = false
-            if (savedDeviceAddress == null) showDeviceList = true
-            else {
-                BluetoothPreferences.setBluetoothAutoParkEnabled(context, true)
-                btEnabled = true
-                BluetoothMonitorService.start(context)
-            }
-        }
-    }
+    fun refreshLinks() { links = BluetoothPreferences.getLinks(context) }
 
     Scaffold(
         topBar = {
@@ -138,10 +132,14 @@ fun BluetoothSettingsScreen(navController: NavController) {
                                 if (btPermission?.status?.shouldShowRationale == true)
                                     "La permission a été refusée. Accordez-la dans les Paramètres de votre téléphone."
                                 else
-                                    "Appuyez sur le toggle pour autoriser l'accès Bluetooth.",
+                                    "Nécessaire pour lister vos appareils Bluetooth appairés.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer
                             )
+                            Spacer(Modifier.height(8.dp))
+                            Button(onClick = { btPermission?.launchPermissionRequest() }) {
+                                Text("Autoriser")
+                            }
                         }
                     }
                 }
@@ -168,7 +166,7 @@ fun BluetoothSettingsScreen(navController: NavController) {
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Text(
-                                "Parkar détecte automatiquement quand vous coupez le contact de votre voiture (déconnexion Bluetooth) et sauvegarde votre position. Quand vous rallumez, le parking est archivé.",
+                                "Parkar détecte automatiquement quand vous coupez le contact de chaque voiture (déconnexion Bluetooth) et sauvegarde sa position. Quand vous rallumez, le parking est archivé. Chaque voiture peut être liée à un appareil Bluetooth différent.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
@@ -177,7 +175,7 @@ fun BluetoothSettingsScreen(navController: NavController) {
                 }
             }
 
-            // â"€â"€ Toggle â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+            // ── Toggle global ──────────────────────────────────────────────
             Card(
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -199,97 +197,99 @@ fun BluetoothSettingsScreen(navController: NavController) {
                         Text("Activer le Bluetooth Auto-Park",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold)
-                        if (!btEnabled) {
-                            Text("Désactivé",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        } else {
-                            Text("Actif",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary)
-                        }
+                        Text(
+                            if (btEnabled) "Actif" else "Désactivé",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (btEnabled) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                     Switch(
                         checked = btEnabled,
                         onCheckedChange = { enabled ->
-                            if (enabled) {
-                                if (!hasBtPermission) {
-                                    pendingEnable = true
-                                    btPermission?.launchPermissionRequest()
-                                } else if (savedDeviceAddress == null) {
-                                    showDeviceList = true
-                                } else {
-                                    BluetoothPreferences.setBluetoothAutoParkEnabled(context, true)
-                                    btEnabled = true
-                                    BluetoothMonitorService.start(context)
-                                }
-                            } else {
-                                BluetoothPreferences.setBluetoothAutoParkEnabled(context, false)
-                                btEnabled = false
-                                BluetoothMonitorService.stop(context)
-                            }
+                            BluetoothPreferences.setBluetoothAutoParkEnabled(context, enabled)
+                            btEnabled = enabled
+                            if (enabled) BluetoothMonitorService.start(context)
+                            else BluetoothMonitorService.stop(context)
                         }
                     )
                 }
             }
 
-            // â"€â"€ Appareil sÃ©lectionnÃ© â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-            if (btEnabled && savedDeviceAddress != null) {
+            // ── Liaison par voiture ────────────────────────────────────────
+            if (cars.isEmpty()) {
                 Card(
                     shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.DirectionsCar, null,
-                                tint = MaterialTheme.colorScheme.primary)
+                    Text(
+                        "Ajoutez d'abord une voiture pour pouvoir la lier à un appareil Bluetooth.",
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                Text("Voitures et appareils liés",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold)
+                cars.forEach { car ->
+                    val link = links.firstOrNull { it.carId == car.id }
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Filled.DirectionsCar, null, tint = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.width(12.dp))
-                            Column {
-                                Text("Appareil voiture",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(savedDeviceName ?: "Inconnu",
-                                    style = MaterialTheme.typography.titleMedium,
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(car.name, style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.SemiBold)
-                                Text(savedDeviceAddress ?: "",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (link != null) {
+                                    Text("Lié à : ${link.deviceName}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary)
+                                } else {
+                                    Text("Aucun appareil lié",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            if (link != null) {
+                                IconButton(onClick = {
+                                    BluetoothPreferences.removeLink(context, car.id)
+                                    refreshLinks()
+                                }) {
+                                    Icon(Icons.Filled.LinkOff, "Délier",
+                                        tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    if (!hasBtPermission) {
+                                        btPermission?.launchPermissionRequest()
+                                    } else {
+                                        carForDevicePicker = car
+                                    }
+                                },
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(
+                                    if (link != null) Icons.Filled.SwapHoriz else Icons.Filled.Link,
+                                    contentDescription = null, modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (link != null) "Changer" else "Lier")
                             }
                         }
-                        Spacer(Modifier.height(12.dp))
-                        OutlinedButton(
-                            onClick = { showDeviceList = true },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Filled.SwapHoriz, contentDescription = null,
-                                modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Changer l'appareil")
-                        }
-                    }
-                }
-            } else if (!btEnabled) {
-                // Instructions
-                Card(
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Comment ça marche ?",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.height(8.dp))
-                        InstructionStep("1", "Activez le Bluetooth Auto-Park")
-                        InstructionStep("2", "Sélectionnez l’appareil Bluetooth de votre voiture")
-                        InstructionStep("3", "Coupez le contact : votre position est sauvegardée")
-                        InstructionStep("4", "Rallumez le moteur : le parking est archivé")
-
                     }
                 }
             }
 
-            // Étapes indispensables pour que la détection fonctionne en arrière-plan
+            // ── Étapes indispensables pour que la détection fonctionne en arrière-plan ──
             if (btEnabled) {
                 if (!hasBgLocation) {
                     Card(
@@ -387,31 +387,40 @@ fun BluetoothSettingsScreen(navController: NavController) {
                         }
                     }
                 }
+            } else {
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Comment ça marche ?",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(8.dp))
+                        InstructionStep("1", "Activez le Bluetooth Auto-Park")
+                        InstructionStep("2", "Liez chaque voiture à son appareil Bluetooth")
+                        InstructionStep("3", "Coupez le contact : la position est sauvegardée")
+                        InstructionStep("4", "Rallumez le moteur : le parking est archivé")
+                    }
+                }
             }
 
             Spacer(Modifier.height(16.dp))
         }
     }
 
-    // â"€â"€ Dialog de sÃ©lection d'appareil â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-    if (showDeviceList) {
+    // ── Dialog de sélection d'appareil pour une voiture donnée ────────────
+    carForDevicePicker?.let { car ->
         PairedDeviceListDialog(
+            carName = car.name,
             onSelect = { address, name ->
-                BluetoothPreferences.saveDevice(context, address, name)
-                savedDeviceName = name
-                savedDeviceAddress = address
+                BluetoothPreferences.saveLink(context, car.id, address, name)
                 btEnabled = true
-                showDeviceList = false
+                refreshLinks()
+                carForDevicePicker = null
                 BluetoothMonitorService.start(context)
             },
-            onDismiss = {
-                showDeviceList = false
-                // Si on annule sans sÃ©lectionner, dÃ©sactiver
-                if (savedDeviceAddress == null) {
-                    BluetoothPreferences.setBluetoothAutoParkEnabled(context, false)
-                    btEnabled = false
-                }
-            }
+            onDismiss = { carForDevicePicker = null }
         )
     }
 }
@@ -443,6 +452,7 @@ private fun InstructionStep(number: String, text: String) {
 @SuppressLint("MissingPermission")
 @Composable
 private fun PairedDeviceListDialog(
+    carName: String,
     onSelect: (String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -451,7 +461,7 @@ private fun PairedDeviceListDialog(
     val adapter = btManager.adapter
 
     val pairedDevices = remember {
-        mutableStateOf<List<Pair<String, String>>>(  
+        mutableStateOf<List<Pair<String, String>>>(
             if (adapter != null && adapter.isEnabled) {
                 adapter.bondedDevices?.map { (it.name ?: "Sans nom") to it.address }?.sortedBy { it.first.lowercase() }
                     ?: emptyList()
@@ -461,7 +471,7 @@ private fun PairedDeviceListDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Appareils Bluetooth") },
+        title = { Text("Appareil Bluetooth pour $carName") },
         text = {
             if (pairedDevices.value.isEmpty()) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -476,7 +486,7 @@ private fun PairedDeviceListDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
-                Text("Sélectionnez l'appareil Bluetooth de votre voiture :",
+                Text("Sélectionnez l'appareil Bluetooth de $carName :",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(bottom = 12.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {

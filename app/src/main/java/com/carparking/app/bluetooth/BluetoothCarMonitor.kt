@@ -51,12 +51,12 @@ class BluetoothCarMonitor : BroadcastReceiver() {
     }
 
     private fun onCarDisconnected(context: Context, device: BluetoothDevice) {
-        val prefs = context.getSharedPreferences("parkar_bluetooth", Context.MODE_PRIVATE)
-        if (!prefs.getBoolean("car_bt_enabled", false)) return
-        val savedAddress = prefs.getString("car_bt_address", null) ?: return
+        if (!BluetoothPreferences.isBluetoothAutoParkEnabled(context)) return
+        val link = BluetoothPreferences.getLinkForDevice(context, device.address)
         BluetoothPreferences.recordEvent(context, "Déconnexion ${device.address}" +
-            if (device.address == savedAddress) " ✓ voiture" else " (autre appareil)")
-        if (device.address != savedAddress) return
+            if (link != null) " ✓ ${link.deviceName}" else " (appareil non lié)")
+        if (link == null) return
+        BluetoothPreferences.recordDisconnectAttempt(context)
 
         Log.d(TAG, "Voiture deconnectee - sauvegarde auto du parking")
 
@@ -64,8 +64,8 @@ class BluetoothCarMonitor : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val db = AppDatabase.getDatabase(context)
-                val cars = db.carDao().getAllCarsSync()
-                if (cars.isEmpty()) { pending.finish(); return@launch }
+                val car = db.carDao().getCarById(link.carId)
+                if (car == null) { pending.finish(); return@launch }
 
                 val location = LocationUtils.getCurrentLocation(context)
                 if (location == null) {
@@ -81,7 +81,6 @@ class BluetoothCarMonitor : BroadcastReceiver() {
                     context, location.latitude, location.longitude
                 )
 
-                val car = cars.first()
                 db.parkingRecordDao().deactivateParkingForCar(car.id)
                 db.parkingRecordDao().insertParking(
                     ParkingRecord(
@@ -115,12 +114,11 @@ class BluetoothCarMonitor : BroadcastReceiver() {
     }
 
     private fun onCarConnected(context: Context, device: BluetoothDevice) {
-        val prefs = context.getSharedPreferences("parkar_bluetooth", Context.MODE_PRIVATE)
-        if (!prefs.getBoolean("car_bt_enabled", false)) return
-        val savedAddress = prefs.getString("car_bt_address", null) ?: return
+        if (!BluetoothPreferences.isBluetoothAutoParkEnabled(context)) return
+        val link = BluetoothPreferences.getLinkForDevice(context, device.address)
         BluetoothPreferences.recordEvent(context, "Connexion ${device.address}" +
-            if (device.address == savedAddress) " ✓ voiture" else " (autre appareil)")
-        if (device.address != savedAddress) return
+            if (link != null) " ✓ ${link.deviceName}" else " (appareil non lié)")
+        if (link == null) return
 
         Log.d(TAG, "Voiture reconnectee - archivage du parking et lancement appli")
 
@@ -128,8 +126,7 @@ class BluetoothCarMonitor : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val db = AppDatabase.getDatabase(context)
-                val cars = db.carDao().getAllCarsSync()
-                val car = cars.firstOrNull() ?: return@launch
+                val car = db.carDao().getCarById(link.carId) ?: return@launch
                 db.parkingRecordDao().deactivateParkingForCar(car.id)
                 OngoingParkingNotification.dismiss(context, car.id)
                 Log.d(TAG, "Parking archive pour ${car.name}")

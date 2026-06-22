@@ -355,15 +355,5 @@ private fun StatusBadge(isParked: Boolean) {
     }
 }
 
-private fun formatDuration(parkedAtMs: Long): String {
-    val diff = System.currentTimeMillis() - parkedAtMs
-    val minutes = diff / 60_000
-    val hours = minutes / 60
-    val days = hours / 24
-    return when {
-        days > 0   -> "il y a ${days}j ${hours % 24}h"
-        hours > 0  -> "il y a ${hours}h ${minutes % 60}min"
-        minutes > 0 -> "il y a ${minutes}min"
-        else       -> "à l'instant"
-    }
-}
+private fun formatDuration(parkedAtMs: Long): String =
+    com.carparking.app.utils.formatElapsedDuration(parkedAtMs)
