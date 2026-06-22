@@ -29,6 +29,7 @@ import coil.compose.AsyncImage
 import com.carparking.app.data.model.Car
 import com.carparking.app.data.model.ParkingRecord
 import com.carparking.app.ui.navigation.Screen
+import com.carparking.app.ui.components.UpdateBanner
 import com.carparking.app.bluetooth.BluetoothPreferences
 import com.carparking.app.ui.theme.GoldAccent
 import com.carparking.app.ui.theme.ParkingGreen
@@ -93,6 +94,7 @@ fun HomeScreen(navController: NavController) {
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                item { UpdateBanner() }
                 item {
                     Text(
                         "Mes voitures",
@@ -119,10 +121,11 @@ fun HomeScreen(navController: NavController) {
 @Composable
 private fun EmptyHomeState(modifier: Modifier = Modifier, onAddCar: () -> Unit) {
     Column(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+        UpdateBanner(modifier = Modifier.padding(bottom = 16.dp))
         Icon(
             Icons.Filled.DirectionsCar,
             contentDescription = null,
