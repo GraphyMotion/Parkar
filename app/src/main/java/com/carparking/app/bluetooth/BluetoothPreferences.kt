@@ -1,8 +1,5 @@
 package com.carparking.app.bluetooth
 
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothManager
 import android.content.Context
 
 /**
@@ -65,22 +62,5 @@ object BluetoothPreferences {
             .remove(KEY_BT_NAME)
             .putBoolean(KEY_BT_ENABLED, false)
             .apply()
-    }
-
-    /**
-     * Vérifie si l'adresse est actuellement connecté (lié au profil)
-     */
-    fun isDeviceConnected(context: Context, address: String): Boolean {
-        val btManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
-            ?: return false
-        val adapter = btManager.adapter ?: return false
-        return try {
-            val device = adapter.getRemoteDevice(address)
-            // On ne peut pas vérifier la connexion ACL sans receiver dédié
-            // Mais on peut vérifier si le device est bonded
-            device.bondState == BluetoothDevice.BOND_BONDED
-        } catch (e: Exception) {
-            false
-        }
     }
 }
