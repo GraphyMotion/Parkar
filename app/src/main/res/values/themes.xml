@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Thème de base de l'app (NoActionBar pour Compose) -->
+    <style name="Theme.CarParking" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- Splash screen : fond bleu marine + icône voiture -->
+    <style name="Theme.CarParking.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#1A237E</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenIconBackgroundColor">#1A237E</item>
+        <item name="windowSplashScreenAnimationDuration">400</item>
+        <item name="postSplashScreenTheme">@style/Theme.CarParking</item>
+    </style>
+</resources>
