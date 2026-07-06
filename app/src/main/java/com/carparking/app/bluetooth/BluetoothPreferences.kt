@@ -17,6 +17,7 @@ object BluetoothPreferences {
     private const val KEY_LINKS = "bt_car_links"
     private const val KEY_LAST_EVENT = "last_bt_event"
     private const val KEY_LAST_DISCONNECT_TS = "last_disconnect_ts"
+    private const val KEY_DEFAULT_REMINDER_MINUTES = "default_reminder_minutes"
 
     /**
      * Marque l'instant d'une déconnexion Bluetooth d'une voiture liée, pour que
@@ -55,6 +56,16 @@ object BluetoothPreferences {
     fun setBluetoothAutoParkEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit().putBoolean(KEY_BT_ENABLED, enabled).apply()
+    }
+
+    /** Durée par défaut du rappel de stationnement lors d'une sauvegarde auto (en minutes, 0 = désactivé). */
+    fun getDefaultReminderMinutes(context: Context): Long =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getLong(KEY_DEFAULT_REMINDER_MINUTES, 0L)
+
+    fun setDefaultReminderMinutes(context: Context, minutes: Long) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putLong(KEY_DEFAULT_REMINDER_MINUTES, minutes).apply()
     }
 
     fun getLinks(context: Context): List<CarLink> {

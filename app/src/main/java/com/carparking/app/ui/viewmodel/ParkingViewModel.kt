@@ -11,7 +11,7 @@ import com.carparking.app.data.model.ParkingPhoto
 import com.carparking.app.data.model.ParkingRecord
 import com.carparking.app.data.repository.ParkingRepository
 import com.carparking.app.notification.OngoingParkingNotification
-import com.carparking.app.notification.ReminderWorker
+import com.carparking.app.notification.ReminderScheduler
 import com.carparking.app.widget.CarParkingWidget
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -19,7 +19,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 
 class ParkingViewModel(application: Application) : AndroidViewModel(application) {
     private val repository: ParkingRepository
@@ -143,17 +142,5 @@ class ParkingViewModel(application: Application) : AndroidViewModel(application)
         carName: String,
         delayMinutes: Long,
         notificationId: Int
-    ): String {
-        val request = OneTimeWorkRequestBuilder<ReminderWorker>()
-            .setInitialDelay(delayMinutes, TimeUnit.MINUTES)
-            .setInputData(
-                workDataOf(
-                    ReminderWorker.KEY_CAR_NAME to carName,
-                    ReminderWorker.KEY_NOTIFICATION_ID to notificationId
-                )
-            )
-            .build()
-        WorkManager.getInstance(context).enqueue(request)
-        return request.id.toString()
-    }
+    ): String = ReminderScheduler.schedule(context, carName, delayMinutes, notificationId)
 }

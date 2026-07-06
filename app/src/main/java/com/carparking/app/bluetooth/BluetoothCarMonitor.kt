@@ -14,6 +14,7 @@ import com.carparking.app.data.database.AppDatabase
 import com.carparking.app.data.model.ParkingRecord
 import com.carparking.app.notification.AutoParkNotification
 import com.carparking.app.notification.OngoingParkingNotification
+import com.carparking.app.notification.ReminderScheduler
 import com.carparking.app.utils.LocationUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -81,6 +82,11 @@ class BluetoothCarMonitor : BroadcastReceiver() {
                     context, location.latitude, location.longitude
                 )
 
+                val reminderMins = BluetoothPreferences.getDefaultReminderMinutes(context)
+                val workerId = if (reminderMins > 0) {
+                    ReminderScheduler.schedule(context, car.name, reminderMins, car.id)
+                } else null
+
                 db.parkingRecordDao().deactivateParkingForCar(car.id)
                 db.parkingRecordDao().insertParking(
                     ParkingRecord(
@@ -88,7 +94,10 @@ class BluetoothCarMonitor : BroadcastReceiver() {
                         latitude = location.latitude,
                         longitude = location.longitude,
                         address = address,
-                        note = "Sauvegarde automatique (Bluetooth)"
+                        note = "Sauvegarde automatique (Bluetooth)",
+                        reminderAt = if (reminderMins > 0)
+                            System.currentTimeMillis() + reminderMins * 60_000L else null,
+                        reminderWorkerId = workerId
                     )
                 )
 
