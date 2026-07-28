@@ -15,9 +15,6 @@
         android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -64,20 +61,15 @@
             </intent-filter>
         </receiver>
 
-        <!-- Bluetooth Auto-Park : le receiver est enregistré dynamiquement par le
-             service ci-dessous (un receiver manifest doublonnerait les sauvegardes) -->
-        <!-- Service en premier plan : écoute Bluetooth fiable même appli fermée -->
-        <service
-            android:name=".bluetooth.BluetoothMonitorService"
-            android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
-
-        <!-- Relance la surveillance après redémarrage du téléphone -->
+        <!-- Bluetooth Auto-Park : receiver déclaré dans le manifest. Le système le
+             réveille aux connexions/déconnexions Bluetooth de la voiture, sans service
+             en premier plan (donc aucune notification permanente). -->
         <receiver
-            android:name=".bluetooth.BootReceiver"
-            android:exported="false">
+            android:name=".bluetooth.BluetoothCarMonitor"
+            android:exported="true">
             <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+                <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
             </intent-filter>
         </receiver>
 

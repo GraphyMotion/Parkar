@@ -2,8 +2,6 @@ package com.carparking.app
 
 import android.app.Application
 import androidx.lifecycle.ProcessLifecycleOwner
-import com.carparking.app.bluetooth.BluetoothMonitorService
-import com.carparking.app.bluetooth.BluetoothPreferences
 import com.carparking.app.crash.CrashHandler
 import com.carparking.app.notification.NotificationHelper
 import com.carparking.app.notification.OngoingParkingNotification
@@ -28,10 +26,7 @@ class CarParkingApplication : Application() {
         OngoingParkingNotification.createChannel(this)
         // Proposer de sauvegarder le parking quand l'app passe en arrière-plan
         ProcessLifecycleOwner.get().lifecycle.addObserver(AppLifecycleObserver(this))
-        // Relance la surveillance Bluetooth si l'Auto-Park est activé
-        // (couvre le cas où le système a tué le service)
-        if (BluetoothPreferences.isBluetoothAutoParkEnabled(this)) {
-            BluetoothMonitorService.start(this)
-        }
+        // La détection Bluetooth est assurée par le receiver déclaré dans le manifest
+        // (BluetoothCarMonitor) — plus besoin de démarrer un service ici.
     }
 }

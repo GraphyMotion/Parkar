@@ -68,7 +68,11 @@ class BluetoothCarMonitor : BroadcastReceiver() {
                 val car = db.carDao().getCarById(link.carId)
                 if (car == null) { pending.finish(); return@launch }
 
-                val location = LocationUtils.getCurrentLocation(context)
+                // Position RAPIDE : dernière position connue (instantanée, la voiture
+                // roulait à l'instant). On ne retombe sur un fix frais qu'en dernier
+                // recours — c'est ce qui rend la sauvegarde fiable à tous les coups.
+                val location = LocationUtils.getLastKnownLocation(context)
+                    ?: LocationUtils.getCurrentLocation(context)
                 if (location == null) {
                     Log.w(TAG, "Impossible d'obtenir la position GPS")
                     BluetoothPreferences.recordEvent(context,
@@ -78,42 +82,56 @@ class BluetoothCarMonitor : BroadcastReceiver() {
                     return@launch
                 }
 
-                val address = LocationUtils.getAddressFromCoordinates(
-                    context, location.latitude, location.longitude
-                )
-
                 val reminderMins = BluetoothPreferences.getDefaultReminderMinutes(context)
                 val workerId = if (reminderMins > 0) {
                     ReminderScheduler.schedule(context, car.name, reminderMins, car.id)
                 } else null
 
-                db.parkingRecordDao().deactivateParkingForCar(car.id)
-                db.parkingRecordDao().insertParking(
-                    ParkingRecord(
-                        carId = car.id,
-                        latitude = location.latitude,
-                        longitude = location.longitude,
-                        address = address,
-                        note = "Sauvegarde automatique (Bluetooth)",
-                        reminderAt = if (reminderMins > 0)
-                            System.currentTimeMillis() + reminderMins * 60_000L else null,
-                        reminderWorkerId = workerId
-                    )
+                // On ENREGISTRE IMMÉDIATEMENT les coordonnées, sans attendre le géocodage
+                // (réseau, plus lent). Ainsi rien n'est perdu même si l'adresse tarde.
+                val now = System.currentTimeMillis()
+                val record = ParkingRecord(
+                    carId = car.id,
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    address = null,
+                    note = "Sauvegarde automatique (Bluetooth)",
+                    reminderAt = if (reminderMins > 0) now + reminderMins * 60_000L else null,
+                    reminderWorkerId = workerId
                 )
+                db.parkingRecordDao().deactivateParkingForCar(car.id)
+                val newId = db.parkingRecordDao().insertParking(record)
 
                 OngoingParkingNotification.show(
                     context = context,
                     carId = car.id,
                     carName = car.name,
-                    address = address,
+                    address = null,
                     latitude = location.latitude,
                     longitude = location.longitude,
-                    parkedSince = System.currentTimeMillis()
+                    parkedSince = now
                 )
 
-                BluetoothPreferences.recordEvent(context,
-                    "Parking sauvegardé : ${address ?: "GPS seul"}")
-                Log.d(TAG, "Parking auto-sauvegarde: ${address ?: "GPS seulement"}")
+                BluetoothPreferences.recordEvent(context, "Parking sauvegardé ✓")
+                Log.d(TAG, "Parking auto-sauvegarde (coordonnées enregistrées)")
+
+                // Géocodage best-effort : on complète l'adresse une fois la position
+                // déjà en sécurité dans la base.
+                val address = LocationUtils.getAddressFromCoordinates(
+                    context, location.latitude, location.longitude
+                )
+                if (address != null) {
+                    db.parkingRecordDao().updateParking(record.copy(id = newId.toInt(), address = address))
+                    OngoingParkingNotification.show(
+                        context = context,
+                        carId = car.id,
+                        carName = car.name,
+                        address = address,
+                        latitude = location.latitude,
+                        longitude = location.longitude,
+                        parkedSince = now
+                    )
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Erreur lors de la sauvegarde auto", e)
             } finally {

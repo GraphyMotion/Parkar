@@ -15,6 +15,33 @@ data class LatLng(val latitude: Double, val longitude: Double)
 
 object LocationUtils {
 
+    /**
+     * Dernière position connue du téléphone — **instantanée** (< 100 ms), car elle est
+     * déjà en cache dans le fournisseur fusionné. Idéale pour la sauvegarde automatique
+     * au moment où la voiture s'arrête : elle roulait à l'instant, donc la position en
+     * cache est fraîche et précise. Retourne null si aucune position récente n'est
+     * disponible (plus vieille que [maxAgeMs]), auquel cas on retombe sur un fix frais.
+     *
+     * C'est ce qui garantit un enregistrement fiable : contrairement à
+     * [getCurrentLocation], on n'attend pas un nouveau fix GPS (10-30 s en parking
+     * souterrain), qui dépassait souvent la fenêtre du receiver et faisait échouer la
+     * sauvegarde de façon aléatoire.
+     */
+    @SuppressLint("MissingPermission")
+    suspend fun getLastKnownLocation(context: Context, maxAgeMs: Long = 2 * 60_000L): LatLng? =
+        suspendCancellableCoroutine { cont ->
+            val fusedClient = LocationServices.getFusedLocationProviderClient(context)
+            fusedClient.lastLocation
+                .addOnSuccessListener { last ->
+                    if (last != null && System.currentTimeMillis() - last.time <= maxAgeMs) {
+                        cont.resume(LatLng(last.latitude, last.longitude))
+                    } else {
+                        cont.resume(null)
+                    }
+                }
+                .addOnFailureListener { cont.resume(null) }
+        }
+
     @SuppressLint("MissingPermission")
     suspend fun getCurrentLocation(context: Context): LatLng? =
         suspendCancellableCoroutine { cont ->

@@ -28,7 +28,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.carparking.app.bluetooth.BluetoothMonitorService
 import com.carparking.app.bluetooth.BluetoothPreferences
 import com.carparking.app.data.model.Car
 import com.carparking.app.ui.viewmodel.CarViewModel
@@ -212,8 +211,6 @@ fun BluetoothSettingsScreen(navController: NavController) {
                         onCheckedChange = { enabled ->
                             BluetoothPreferences.setBluetoothAutoParkEnabled(context, enabled)
                             btEnabled = enabled
-                            if (enabled) BluetoothMonitorService.start(context)
-                            else BluetoothMonitorService.stop(context)
                         }
                     )
                 }
@@ -481,7 +478,6 @@ fun BluetoothSettingsScreen(navController: NavController) {
                 btEnabled = true
                 refreshLinks()
                 carForDevicePicker = null
-                BluetoothMonitorService.start(context)
             },
             onDismiss = { carForDevicePicker = null }
         )
