@@ -28,6 +28,7 @@ import coil.compose.AsyncImage
 import com.carparking.app.data.model.Car
 import com.carparking.app.ui.viewmodel.CarViewModel
 import com.carparking.app.utils.ImageUtils
+import com.carparking.app.utils.formatReminderDuration
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -47,6 +48,7 @@ fun AddEditCarScreen(navController: NavController, carId: Int?) {
     var photoUri by remember { mutableStateOf<Uri?>(null) }
     var tempImageFile by remember { mutableStateOf<File?>(null) }
     var nameError by remember { mutableStateOf(false) }
+    var autoReminderMinutes by remember { mutableStateOf(0L) }
 
     // Load car data if editing
     LaunchedEffect(carId) {
@@ -54,6 +56,7 @@ fun AddEditCarScreen(navController: NavController, carId: Int?) {
             vm.getCarById(carId)?.let { car ->
                 name = car.name
                 photoPath = car.photoPath
+                autoReminderMinutes = car.autoReminderMinutes
             }
         }
     }
@@ -181,7 +184,69 @@ fun AddEditCarScreen(navController: NavController, carId: Int?) {
                 singleLine = true
             )
 
-            Spacer(Modifier.height(40.dp))
+            Spacer(Modifier.height(24.dp))
+
+            // ── Rappel de stationnement automatique, propre à cette voiture ──
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Filled.Alarm,
+                            contentDescription = null,
+                            tint = if (autoReminderMinutes > 0) MaterialTheme.colorScheme.primary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Rappel de stationnement",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                formatReminderDuration(autoReminderMinutes),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (autoReminderMinutes > 0) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Vous serez prévenu après cette durée lorsque le stationnement de " +
+                        "cette voiture est enregistré automatiquement (Bluetooth).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Slider(
+                        value = autoReminderMinutes.toFloat() / 60f,
+                        onValueChange = { hours ->
+                            // Arrondi au quart d'heure le plus proche
+                            autoReminderMinutes = (hours * 4).toLong() * 15L
+                        },
+                        valueRange = 0f..12f,
+                        steps = 47
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Aucun", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("12h", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(32.dp))
 
             Button(
                 onClick = {
@@ -193,10 +258,18 @@ fun AddEditCarScreen(navController: NavController, carId: Int?) {
                         if (isEdit && carId != null) {
                             val existing = vm.getCarById(carId)
                             if (existing != null) {
-                                vm.updateCar(existing.copy(name = name.trim(), photoPath = photoPath))
+                                vm.updateCar(existing.copy(
+                                    name = name.trim(),
+                                    photoPath = photoPath,
+                                    autoReminderMinutes = autoReminderMinutes
+                                ))
                             }
                         } else {
-                            vm.addCar(Car(name = name.trim(), photoPath = photoPath))
+                            vm.addCar(Car(
+                                name = name.trim(),
+                                photoPath = photoPath,
+                                autoReminderMinutes = autoReminderMinutes
+                            ))
                         }
                         navController.popBackStack()
                     }

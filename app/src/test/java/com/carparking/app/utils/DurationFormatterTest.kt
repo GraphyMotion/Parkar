@@ -39,4 +39,36 @@ class DurationFormatterTest {
         val oneDayFiveHours = (29 * 60) * 60_000L
         assertEquals("il y a 1j 5h", formatElapsedDuration(now - oneDayFiveHours, now))
     }
+
+    // ── Rappel de stationnement (réglage par voiture) ──────────────────────
+
+    @Test
+    fun `rappel a zero est desactive`() {
+        assertEquals("Aucun rappel", formatReminderDuration(0))
+    }
+
+    @Test
+    fun `rappel negatif est traite comme desactive`() {
+        assertEquals("Aucun rappel", formatReminderDuration(-15))
+    }
+
+    @Test
+    fun `rappel en minutes seules`() {
+        assertEquals("45min", formatReminderDuration(45))
+    }
+
+    @Test
+    fun `rappel en heures pleines`() {
+        assertEquals("2h", formatReminderDuration(120))
+    }
+
+    @Test
+    fun `rappel en heures et minutes`() {
+        assertEquals("1h30min", formatReminderDuration(90))
+    }
+
+    @Test
+    fun `rappel maximal de douze heures`() {
+        assertEquals("12h", formatReminderDuration(720))
+    }
 }

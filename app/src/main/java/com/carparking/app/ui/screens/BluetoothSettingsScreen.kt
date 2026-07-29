@@ -37,6 +37,7 @@ import com.carparking.app.bluetooth.BluetoothPreferences
 import com.carparking.app.bluetooth.CompanionDeviceHelper
 import com.carparking.app.data.model.Car
 import com.carparking.app.ui.viewmodel.CarViewModel
+import com.carparking.app.utils.formatReminderDuration
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
@@ -52,9 +53,6 @@ fun BluetoothSettingsScreen(navController: NavController) {
     var btEnabled by remember { mutableStateOf(BluetoothPreferences.isBluetoothAutoParkEnabled(context)) }
     var links by remember { mutableStateOf(BluetoothPreferences.getLinks(context)) }
     var carForDevicePicker by remember { mutableStateOf<Car?>(null) }
-    var defaultReminderMins by remember {
-        mutableStateOf(BluetoothPreferences.getDefaultReminderMinutes(context))
-    }
     var reliableMode by remember { mutableStateOf(BluetoothPreferences.isReliableModeEnabled(context)) }
 
     // BLUETOOTH_CONNECT est une permission runtime sur Android 12+ (API 31+)
@@ -330,66 +328,6 @@ fun BluetoothSettingsScreen(navController: NavController) {
                 }
             }
 
-            // ── Rappel de stationnement par défaut ─────────────────────────
-            Card(
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Filled.Alarm,
-                            contentDescription = null,
-                            tint = if (defaultReminderMins > 0) MaterialTheme.colorScheme.primary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "Rappel de stationnement automatique",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                if (defaultReminderMins > 0L) formatReminderDuration(defaultReminderMins)
-                                else "Désactivé",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (defaultReminderMins > 0) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Une notification vous préviendra après cette durée lors d'un parking enregistré automatiquement (Bluetooth).",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Slider(
-                        value = defaultReminderMins.toFloat() / 60f,
-                        onValueChange = { hours ->
-                            // Arrondi au quart d'heure le plus proche
-                            val mins = ((hours * 4).toLong() * 15L)
-                            defaultReminderMins = mins
-                            BluetoothPreferences.setDefaultReminderMinutes(context, mins)
-                        },
-                        valueRange = 0f..12f,
-                        steps = 47  // 0, 0.25, 0.5, ..., 12 -> 49 positions -> 47 steps
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Aucun", style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("12h", style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-
             // ── Liaison par voiture ────────────────────────────────────────
             if (cars.isEmpty()) {
                 Card(
@@ -440,6 +378,12 @@ fun BluetoothSettingsScreen(navController: NavController) {
                                                     else MaterialTheme.colorScheme.error
                                         )
                                     }
+                                    // Le rappel se règle dans la fiche de la voiture
+                                    Text(
+                                        "Rappel : ${formatReminderDuration(car.autoReminderMinutes)}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 } else {
                                     Text("Aucun appareil lié",
                                         style = MaterialTheme.typography.bodySmall,
@@ -654,17 +598,6 @@ fun BluetoothSettingsScreen(navController: NavController) {
             },
             onDismiss = { carForDevicePicker = null }
         )
-    }
-}
-
-private fun formatReminderDuration(minutes: Long): String {
-    if (minutes <= 0) return "Désactivé"
-    val h = minutes / 60
-    val m = minutes % 60
-    return when {
-        h == 0L -> "${m}min"
-        m == 0L -> "${h}h"
-        else -> "${h}h${m}min"
     }
 }
 

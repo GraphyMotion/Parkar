@@ -85,14 +85,16 @@ object BluetoothPreferences {
             .edit().putBoolean(KEY_BT_ENABLED, enabled).apply()
     }
 
-    /** Durée par défaut du rappel de stationnement lors d'une sauvegarde auto (en minutes, 0 = désactivé). */
-    fun getDefaultReminderMinutes(context: Context): Long =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getLong(KEY_DEFAULT_REMINDER_MINUTES, 0L)
-
-    fun setDefaultReminderMinutes(context: Context, minutes: Long) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit().putLong(KEY_DEFAULT_REMINDER_MINUTES, minutes).apply()
+    /**
+     * Ancienne durée de rappel **globale**, remplacée par [com.carparking.app.data.model.Car.autoReminderMinutes]
+     * propre à chaque voiture. Conservée uniquement le temps de reporter la valeur
+     * existante sur les voitures, puis effacée.
+     */
+    fun consumeLegacyReminderMinutes(context: Context): Long {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val value = prefs.getLong(KEY_DEFAULT_REMINDER_MINUTES, 0L)
+        if (value > 0L) prefs.edit().remove(KEY_DEFAULT_REMINDER_MINUTES).apply()
+        return value
     }
 
     fun getLinks(context: Context): List<CarLink> {

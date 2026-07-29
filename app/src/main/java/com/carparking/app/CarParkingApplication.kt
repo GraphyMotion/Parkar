@@ -6,10 +6,14 @@ import com.carparking.app.bluetooth.BluetoothMonitorService
 import com.carparking.app.bluetooth.BluetoothPreferences
 import com.carparking.app.bluetooth.CompanionDeviceHelper
 import com.carparking.app.crash.CrashHandler
+import com.carparking.app.data.database.AppDatabase
 import com.carparking.app.notification.AutoParkNotification
 import com.carparking.app.notification.NotificationHelper
 import com.carparking.app.notification.OngoingParkingNotification
 import com.carparking.app.utils.AppLifecycleObserver
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.osmdroid.config.Configuration
 
 class CarParkingApplication : Application() {
@@ -42,6 +46,26 @@ class CarParkingApplication : Application() {
             BluetoothPreferences.isReliableModeEnabled(this)
         ) {
             BluetoothMonitorService.start(this)
+        }
+
+        migrateLegacyReminder()
+    }
+
+    /**
+     * Reporte l'ancienne durée de rappel globale sur chaque voiture qui n'en a pas
+     * encore, pour ne pas perdre silencieusement le réglage de l'utilisateur.
+     * Ne s'exécute qu'une fois : la valeur globale est effacée au passage.
+     */
+    private fun migrateLegacyReminder() {
+        val legacy = BluetoothPreferences.consumeLegacyReminderMinutes(this)
+        if (legacy <= 0L) return
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching {
+                val dao = AppDatabase.getDatabase(this@CarParkingApplication).carDao()
+                dao.getAllCarsSync()
+                    .filter { it.autoReminderMinutes == 0L }
+                    .forEach { dao.updateCar(it.copy(autoReminderMinutes = legacy)) }
+            }
         }
     }
 }

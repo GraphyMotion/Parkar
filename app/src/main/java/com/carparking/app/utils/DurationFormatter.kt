@@ -17,3 +17,18 @@ fun formatElapsedDuration(parkedAtMs: Long, nowMs: Long = System.currentTimeMill
         else -> if (withPrefix) "à l'instant" else "à l'instant"
     }
 }
+
+/**
+ * Formate une durée de rappel (en minutes) pour l'affichage des réglages.
+ * 0 signifie « pas de rappel ».
+ */
+fun formatReminderDuration(minutes: Long): String {
+    if (minutes <= 0) return "Aucun rappel"
+    val h = minutes / 60
+    val m = minutes % 60
+    return when {
+        h == 0L -> "${m}min"
+        m == 0L -> "${h}h"
+        else -> "${h}h${m}min"
+    }
+}

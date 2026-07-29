@@ -71,7 +71,8 @@ object AutoParkHandler {
                 return
             }
 
-            val reminderMins = BluetoothPreferences.getDefaultReminderMinutes(context)
+            // Le rappel est propre à chaque voiture (réglé dans sa fiche)
+            val reminderMins = car.autoReminderMinutes
             val workerId = if (reminderMins > 0) {
                 ReminderScheduler.schedule(context, car.name, reminderMins, car.id)
             } else null
