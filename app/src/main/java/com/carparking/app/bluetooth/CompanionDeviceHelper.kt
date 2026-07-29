@@ -9,6 +9,7 @@ import android.companion.CompanionDeviceManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentSender
+import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 
@@ -25,9 +26,15 @@ object CompanionDeviceHelper {
 
     private const val TAG = "CompanionDeviceHelper"
 
-    /** L'observation de présence CDM demande Android 12+. */
-    val isSupported: Boolean
-        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    /**
+     * L'observation de présence CDM demande Android 12+, ET que l'appareil expose
+     * réellement la fonctionnalité (certains constructeurs / ROMs allégées ne
+     * l'embarquent pas). Sans cette seconde vérification, on proposerait un
+     * sélecteur qui ne peut pas s'ouvrir.
+     */
+    fun isSupported(context: Context): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            context.packageManager.hasSystemFeature(PackageManager.FEATURE_COMPANION_DEVICE_SETUP)
 
     private fun manager(context: Context): CompanionDeviceManager? =
         context.getSystemService(CompanionDeviceManager::class.java)
@@ -115,7 +122,7 @@ object CompanionDeviceHelper {
      * [CarCompanionService] à chaque apparition/disparition.
      */
     fun startObserving(context: Context, address: String) {
-        if (!isSupported) return
+        if (!isSupported(context)) return
         val cdm = manager(context) ?: return
         try {
             @Suppress("DEPRECATION")
@@ -128,7 +135,7 @@ object CompanionDeviceHelper {
     }
 
     fun stopObserving(context: Context, address: String) {
-        if (!isSupported) return
+        if (!isSupported(context)) return
         val cdm = manager(context) ?: return
         try {
             @Suppress("DEPRECATION")
@@ -140,7 +147,7 @@ object CompanionDeviceHelper {
 
     /** Supprime l'association système (appelé quand on délie une voiture). */
     fun disassociate(context: Context, address: String) {
-        if (!isSupported) return
+        if (!isSupported(context)) return
         val cdm = manager(context) ?: return
         try {
             stopObserving(context, address)
@@ -153,7 +160,7 @@ object CompanionDeviceHelper {
 
     /** Adresses actuellement associées au niveau système. */
     fun associatedAddresses(context: Context): List<String> {
-        if (!isSupported) return emptyList()
+        if (!isSupported(context)) return emptyList()
         val cdm = manager(context) ?: return emptyList()
         return try {
             @Suppress("DEPRECATION")
@@ -168,7 +175,7 @@ object CompanionDeviceHelper {
      * l'appli : le système peut avoir relâché l'observation (mise à jour, redémarrage).
      */
     fun rearmAll(context: Context) {
-        if (!isSupported) return
+        if (!isSupported(context)) return
         if (!BluetoothPreferences.isBluetoothAutoParkEnabled(context)) return
         val associated = associatedAddresses(context)
         BluetoothPreferences.getLinks(context).forEach { link ->

@@ -73,7 +73,7 @@ fun BluetoothSettingsScreen(navController: NavController) {
 
     // Association via le Companion Device Manager (Android 12+) : c'est elle qui permet
     // au système de réveiller l'appli même fermée, sans notification permanente.
-    val cdmSupported = CompanionDeviceHelper.isSupported
+    val cdmSupported = remember { CompanionDeviceHelper.isSupported(context) }
     var pendingCar by remember { mutableStateOf<Car?>(null) }
     var associationError by remember { mutableStateOf<String?>(null) }
     var associatedAddresses by remember {

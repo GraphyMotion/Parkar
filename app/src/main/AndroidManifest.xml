@@ -32,6 +32,15 @@
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- OBLIGATOIRE pour utiliser l'API Companion Device Manager : sans cette
+         déclaration, associate() lève « Must declare uses-feature
+         android.software.companion_device_setup in manifest to use this API ».
+         required=false pour rester installable sur les rares appareils sans CDM
+         (on retombe alors sur le receiver Bluetooth classique). -->
+    <uses-feature
+        android:name="android.software.companion_device_setup"
+        android:required="false" />
+
     <application
         android:name=".CarParkingApplication"
         android:allowBackup="true"
