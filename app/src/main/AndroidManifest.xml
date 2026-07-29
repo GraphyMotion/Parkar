@@ -17,6 +17,19 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Companion Device Manager : permet au système de réveiller l'appli à la
+         connexion/déconnexion de la voiture, même appli fermée, sans notification
+         permanente. C'est la détection principale sur Android 12+. -->
+    <uses-permission android:name="android.permission.REQUEST_COMPANION_RUN_IN_BACKGROUND" />
+    <uses-permission android:name="android.permission.REQUEST_COMPANION_USE_DATA_IN_BACKGROUND" />
+    <uses-permission android:name="android.permission.REQUEST_COMPANION_START_FOREGROUND_SERVICES_FROM_BACKGROUND" />
+    <uses-permission android:name="android.permission.REQUEST_OBSERVE_COMPANION_DEVICE_PRESENCE" />
+
+    <!-- Mode fiable optionnel (service en premier plan), désactivé par défaut -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
@@ -61,15 +74,41 @@
             </intent-filter>
         </receiver>
 
-        <!-- Bluetooth Auto-Park : receiver déclaré dans le manifest. Le système le
-             réveille aux connexions/déconnexions Bluetooth de la voiture, sans service
-             en premier plan (donc aucune notification permanente). -->
+        <!-- DÉTECTION PRINCIPALE (Android 12+) : le système réveille ce service quand
+             la voiture associée apparaît/disparaît, même appli fermée ou balayée des
+             récentes — et sans aucune notification permanente. -->
+        <service
+            android:name=".bluetooth.CarCompanionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_COMPANION_DEVICE_SERVICE">
+            <intent-filter>
+                <action android:name="android.companion.CompanionDeviceService" />
+            </intent-filter>
+        </service>
+
+        <!-- Détection complémentaire : couvre Android 11 et les cas où l'appli tourne
+             déjà. Un garde-fou anti-doublon évite la double sauvegarde. -->
         <receiver
             android:name=".bluetooth.BluetoothCarMonitor"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
                 <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Mode fiable optionnel : service en premier plan, désactivé par défaut -->
+        <service
+            android:name=".bluetooth.BluetoothMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+
+        <!-- Réarme la détection après redémarrage du téléphone -->
+        <receiver
+            android:name=".bluetooth.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
 

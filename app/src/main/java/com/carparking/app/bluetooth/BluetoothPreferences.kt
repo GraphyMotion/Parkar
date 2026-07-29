@@ -17,7 +17,9 @@ object BluetoothPreferences {
     private const val KEY_LINKS = "bt_car_links"
     private const val KEY_LAST_EVENT = "last_bt_event"
     private const val KEY_LAST_DISCONNECT_TS = "last_disconnect_ts"
+    private const val KEY_LAST_CONNECT_TS = "last_connect_ts"
     private const val KEY_DEFAULT_REMINDER_MINUTES = "default_reminder_minutes"
+    private const val KEY_RELIABLE_MODE = "reliable_mode"
 
     /**
      * Marque l'instant d'une déconnexion Bluetooth d'une voiture liée, pour que
@@ -33,6 +35,31 @@ object BluetoothPreferences {
         val ts = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getLong(KEY_LAST_DISCONNECT_TS, 0)
         return System.currentTimeMillis() - ts < windowMs
+    }
+
+    /** Idem pour les reconnexions, pour ne pas archiver deux fois le même parking. */
+    fun recordConnectAttempt(context: Context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putLong(KEY_LAST_CONNECT_TS, System.currentTimeMillis()).apply()
+    }
+
+    fun hasRecentConnectAttempt(context: Context, windowMs: Long): Boolean {
+        val ts = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getLong(KEY_LAST_CONNECT_TS, 0)
+        return System.currentTimeMillis() - ts < windowMs
+    }
+
+    /**
+     * Mode fiable : ajoute un service en premier plan (donc une notification permanente)
+     * pour les téléphones où le Companion Device Manager ne suffit pas.
+     */
+    fun isReliableModeEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_RELIABLE_MODE, false)
+
+    fun setReliableModeEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_RELIABLE_MODE, enabled).apply()
     }
 
     /** Journal de diagnostic : dernier événement Bluetooth reçu par le receiver */
@@ -85,13 +112,18 @@ object BluetoothPreferences {
     fun getLinkForCar(context: Context, carId: Int): CarLink? =
         getLinks(context).firstOrNull { it.carId == carId }
 
+    /**
+     * Recherche insensible à la casse : le Companion Device Manager renvoie l'adresse
+     * MAC en minuscules alors que [android.bluetooth.BluetoothDevice.getAddress] la
+     * renvoie en majuscules. Une comparaison stricte raterait la correspondance.
+     */
     fun getLinkForDevice(context: Context, address: String): CarLink? =
-        getLinks(context).firstOrNull { it.deviceAddress == address }
+        getLinks(context).firstOrNull { it.deviceAddress.equals(address, ignoreCase = true) }
 
     /** Associe un appareil Bluetooth à une voiture (remplace tout lien existant pour cette voiture ou cet appareil). */
     fun saveLink(context: Context, carId: Int, address: String, name: String) {
         val updated = getLinks(context)
-            .filterNot { it.carId == carId || it.deviceAddress == address } +
+            .filterNot { it.carId == carId || it.deviceAddress.equals(address, ignoreCase = true) } +
             CarLink(carId, address, name)
         persist(context, updated)
         setBluetoothAutoParkEnabled(context, true)

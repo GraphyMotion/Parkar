@@ -1,204 +1,54 @@
 package com.carparking.app.bluetooth
 
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.util.Log
-import androidx.core.app.NotificationCompat
-import com.carparking.app.MainActivity
-import com.carparking.app.data.database.AppDatabase
-import com.carparking.app.data.model.ParkingRecord
-import com.carparking.app.notification.AutoParkNotification
-import com.carparking.app.notification.OngoingParkingNotification
-import com.carparking.app.notification.ReminderScheduler
-import com.carparking.app.utils.LocationUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+/**
+ * Receiver Bluetooth classique.
+ *
+ * Il complète [CarCompanionService] : il couvre Android 11 (où l'observation de
+ * présence du Companion Device Manager n'existe pas) et les cas où l'appli tourne
+ * déjà. Le garde-fou anti-doublon d'[AutoParkHandler] empêche une double
+ * sauvegarde quand les deux sources reçoivent le même événement.
+ */
 class BluetoothCarMonitor : BroadcastReceiver() {
 
-    companion object {
-        private const val TAG = "BluetoothCarMonitor"
-        private const val NOTIF_CHANNEL_ID = "bt_autopark_channel"
-        private const val NOTIF_ID_CONNECTED = 60_000
+    private companion object {
+        const val SOURCE = "receiver"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        when (intent.action) {
-            BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
-                val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
-                }
-                device?.let { onCarDisconnected(context, it) }
-            }
-            BluetoothDevice.ACTION_ACL_CONNECTED -> {
-                val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
-                }
-                device?.let { onCarConnected(context, it) }
-            }
-        }
-    }
+        val action = intent.action
+        if (action != BluetoothDevice.ACTION_ACL_CONNECTED &&
+            action != BluetoothDevice.ACTION_ACL_DISCONNECTED
+        ) return
 
-    private fun onCarDisconnected(context: Context, device: BluetoothDevice) {
-        if (!BluetoothPreferences.isBluetoothAutoParkEnabled(context)) return
-        val link = BluetoothPreferences.getLinkForDevice(context, device.address)
-        BluetoothPreferences.recordEvent(context, "Déconnexion ${device.address}" +
-            if (link != null) " ✓ ${link.deviceName}" else " (appareil non lié)")
-        if (link == null) return
-        BluetoothPreferences.recordDisconnectAttempt(context)
+        val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+        } ?: return
 
-        Log.d(TAG, "Voiture deconnectee - sauvegarde auto du parking")
-
+        val address = device.address
+        val appContext = context.applicationContext
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val db = AppDatabase.getDatabase(context)
-                val car = db.carDao().getCarById(link.carId)
-                if (car == null) { pending.finish(); return@launch }
-
-                // Position RAPIDE : dernière position connue (instantanée, la voiture
-                // roulait à l'instant). On ne retombe sur un fix frais qu'en dernier
-                // recours — c'est ce qui rend la sauvegarde fiable à tous les coups.
-                val location = LocationUtils.getLastKnownLocation(context)
-                    ?: LocationUtils.getCurrentLocation(context)
-                if (location == null) {
-                    Log.w(TAG, "Impossible d'obtenir la position GPS")
-                    BluetoothPreferences.recordEvent(context,
-                        "Échec GPS — vérifiez la localisation \"Tout le temps\"")
-                    AutoParkNotification.show(context)
-                    pending.finish()
-                    return@launch
+                if (action == BluetoothDevice.ACTION_ACL_DISCONNECTED) {
+                    AutoParkHandler.handleDisconnected(appContext, address, SOURCE)
+                } else {
+                    AutoParkHandler.handleConnected(appContext, address, SOURCE)
                 }
-
-                val reminderMins = BluetoothPreferences.getDefaultReminderMinutes(context)
-                val workerId = if (reminderMins > 0) {
-                    ReminderScheduler.schedule(context, car.name, reminderMins, car.id)
-                } else null
-
-                // On ENREGISTRE IMMÉDIATEMENT les coordonnées, sans attendre le géocodage
-                // (réseau, plus lent). Ainsi rien n'est perdu même si l'adresse tarde.
-                val now = System.currentTimeMillis()
-                val record = ParkingRecord(
-                    carId = car.id,
-                    latitude = location.latitude,
-                    longitude = location.longitude,
-                    address = null,
-                    note = "Sauvegarde automatique (Bluetooth)",
-                    reminderAt = if (reminderMins > 0) now + reminderMins * 60_000L else null,
-                    reminderWorkerId = workerId
-                )
-                db.parkingRecordDao().deactivateParkingForCar(car.id)
-                val newId = db.parkingRecordDao().insertParking(record)
-
-                OngoingParkingNotification.show(
-                    context = context,
-                    carId = car.id,
-                    carName = car.name,
-                    address = null,
-                    latitude = location.latitude,
-                    longitude = location.longitude,
-                    parkedSince = now
-                )
-
-                BluetoothPreferences.recordEvent(context, "Parking sauvegardé ✓")
-                Log.d(TAG, "Parking auto-sauvegarde (coordonnées enregistrées)")
-
-                // Géocodage best-effort : on complète l'adresse une fois la position
-                // déjà en sécurité dans la base.
-                val address = LocationUtils.getAddressFromCoordinates(
-                    context, location.latitude, location.longitude
-                )
-                if (address != null) {
-                    db.parkingRecordDao().updateParking(record.copy(id = newId.toInt(), address = address))
-                    OngoingParkingNotification.show(
-                        context = context,
-                        carId = car.id,
-                        carName = car.name,
-                        address = address,
-                        latitude = location.latitude,
-                        longitude = location.longitude,
-                        parkedSince = now
-                    )
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Erreur lors de la sauvegarde auto", e)
             } finally {
                 pending.finish()
             }
         }
-    }
-
-    private fun onCarConnected(context: Context, device: BluetoothDevice) {
-        if (!BluetoothPreferences.isBluetoothAutoParkEnabled(context)) return
-        val link = BluetoothPreferences.getLinkForDevice(context, device.address)
-        BluetoothPreferences.recordEvent(context, "Connexion ${device.address}" +
-            if (link != null) " ✓ ${link.deviceName}" else " (appareil non lié)")
-        if (link == null) return
-
-        Log.d(TAG, "Voiture reconnectee - archivage du parking et lancement appli")
-
-        val pending = goAsync()
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val db = AppDatabase.getDatabase(context)
-                val car = db.carDao().getCarById(link.carId) ?: return@launch
-                db.parkingRecordDao().deactivateParkingForCar(car.id)
-                OngoingParkingNotification.dismiss(context, car.id)
-                Log.d(TAG, "Parking archive pour ${car.name}")
-                launchApp(context, car.name)
-            } catch (e: Exception) {
-                Log.e(TAG, "Erreur lors de l'archivage", e)
-            } finally {
-                pending.finish()
-            }
-        }
-    }
-
-    private fun launchApp(context: Context, carName: String) {
-        // Lance directement MainActivity
-        val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        context.startActivity(intent)
-
-        // Notification de confirmation visible dans le shade (au cas où le lancement est bloqué par Android)
-        ensureChannel(context)
-        val openPending = PendingIntent.getActivity(
-            context, NOTIF_ID_CONNECTED, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notif = NotificationCompat.Builder(context, NOTIF_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setContentTitle("🚗 Bon trajet !")
-            .setContentText("Parking de $carName archivé — l'appli est ouverte.")
-            .setContentIntent(openPending)
-            .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .build()
-        context.getSystemService(NotificationManager::class.java)
-            .notify(NOTIF_ID_CONNECTED, notif)
-    }
-
-    private fun ensureChannel(context: Context) {
-        val nm = context.getSystemService(NotificationManager::class.java)
-        if (nm.getNotificationChannel(NOTIF_CHANNEL_ID) != null) return
-        val ch = android.app.NotificationChannel(
-            NOTIF_CHANNEL_ID,
-            "Bluetooth Auto-Park",
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply { description = "Notifications de démarrage/arrêt automatique du parking" }
-        nm.createNotificationChannel(ch)
     }
 }

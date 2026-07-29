@@ -2,7 +2,11 @@ package com.carparking.app
 
 import android.app.Application
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.carparking.app.bluetooth.BluetoothMonitorService
+import com.carparking.app.bluetooth.BluetoothPreferences
+import com.carparking.app.bluetooth.CompanionDeviceHelper
 import com.carparking.app.crash.CrashHandler
+import com.carparking.app.notification.AutoParkNotification
 import com.carparking.app.notification.NotificationHelper
 import com.carparking.app.notification.OngoingParkingNotification
 import com.carparking.app.utils.AppLifecycleObserver
@@ -24,9 +28,20 @@ class CarParkingApplication : Application() {
         // Canaux de notifications
         NotificationHelper.createNotificationChannel(this)
         OngoingParkingNotification.createChannel(this)
+        // Sans ce canal, la notification d'échec GPS était silencieusement ignorée
+        AutoParkNotification.createChannel(this)
         // Proposer de sauvegarder le parking quand l'app passe en arrière-plan
         ProcessLifecycleOwner.get().lifecycle.addObserver(AppLifecycleObserver(this))
-        // La détection Bluetooth est assurée par le receiver déclaré dans le manifest
-        // (BluetoothCarMonitor) — plus besoin de démarrer un service ici.
+
+        // Réarme l'observation de présence des voitures associées : le système peut
+        // l'avoir relâchée (mise à jour de l'appli, redémarrage du téléphone).
+        CompanionDeviceHelper.rearmAll(this)
+
+        // Mode fiable optionnel (service en premier plan), si l'utilisateur l'a activé
+        if (BluetoothPreferences.isBluetoothAutoParkEnabled(this) &&
+            BluetoothPreferences.isReliableModeEnabled(this)
+        ) {
+            BluetoothMonitorService.start(this)
+        }
     }
 }

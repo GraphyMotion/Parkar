@@ -1,6 +1,7 @@
 package com.carparking.app.ui.screens
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.Intent
@@ -8,6 +9,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -28,7 +32,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.carparking.app.bluetooth.BluetoothMonitorService
 import com.carparking.app.bluetooth.BluetoothPreferences
+import com.carparking.app.bluetooth.CompanionDeviceHelper
 import com.carparking.app.data.model.Car
 import com.carparking.app.ui.viewmodel.CarViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
@@ -48,6 +54,56 @@ fun BluetoothSettingsScreen(navController: NavController) {
     var carForDevicePicker by remember { mutableStateOf<Car?>(null) }
     var defaultReminderMins by remember {
         mutableStateOf(BluetoothPreferences.getDefaultReminderMinutes(context))
+    }
+    var reliableMode by remember { mutableStateOf(BluetoothPreferences.isReliableModeEnabled(context)) }
+
+    // Association via le Companion Device Manager (Android 12+) : c'est elle qui permet
+    // au système de réveiller l'appli même fermée, sans notification permanente.
+    val cdmSupported = CompanionDeviceHelper.isSupported
+    var pendingCar by remember { mutableStateOf<Car?>(null) }
+    var associationError by remember { mutableStateOf<String?>(null) }
+    var associatedAddresses by remember {
+        mutableStateOf(CompanionDeviceHelper.associatedAddresses(context))
+    }
+
+    val associationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        val car = pendingCar
+        pendingCar = null
+        if (result.resultCode != Activity.RESULT_OK || car == null) return@rememberLauncherForActivityResult
+        val picked = CompanionDeviceHelper.parseAssociationResult(result.data)
+        if (picked == null) {
+            associationError = "Appareil non reconnu, réessayez."
+            return@rememberLauncherForActivityResult
+        }
+        val (address, name) = picked
+        BluetoothPreferences.saveLink(context, car.id, address, name)
+        CompanionDeviceHelper.startObserving(context, address)
+        associatedAddresses = CompanionDeviceHelper.associatedAddresses(context)
+        links = BluetoothPreferences.getLinks(context)
+        btEnabled = true
+    }
+
+    fun linkCar(car: Car) {
+        if (cdmSupported) {
+            pendingCar = car
+            associationError = null
+            CompanionDeviceHelper.requestAssociation(
+                context = context,
+                onIntentSender = { sender ->
+                    associationLauncher.launch(IntentSenderRequest.Builder(sender).build())
+                },
+                onError = { msg ->
+                    pendingCar = null
+                    associationError = msg
+                }
+            )
+        } else {
+            // Android 11 : pas d'observation de présence CDM, on retombe sur la
+            // liste des appareils appairés + receiver classique.
+            carForDevicePicker = car
+        }
     }
 
     // BLUETOOTH_CONNECT est une permission runtime sur Android 12+ (API 31+)
@@ -80,6 +136,7 @@ fun BluetoothSettingsScreen(navController: NavController) {
             if (event == Lifecycle.Event.ON_RESUME) {
                 ignoresBatteryOptim = powerManager.isIgnoringBatteryOptimizations(context.packageName)
                 lastBtEvent = BluetoothPreferences.getLastEvent(context)
+                associatedAddresses = CompanionDeviceHelper.associatedAddresses(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -216,6 +273,26 @@ fun BluetoothSettingsScreen(navController: NavController) {
                 }
             }
 
+            associationError?.let { msg ->
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.ErrorOutline, null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer)
+                        Spacer(Modifier.width(12.dp))
+                        Text(msg, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.weight(1f))
+                        TextButton(onClick = { associationError = null }) { Text("OK") }
+                    }
+                }
+            }
+
             // ── Rappel de stationnement par défaut ─────────────────────────
             Card(
                 shape = RoundedCornerShape(18.dp),
@@ -312,6 +389,20 @@ fun BluetoothSettingsScreen(navController: NavController) {
                                     Text("Lié à : ${link.deviceName}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.primary)
+                                    // Sur Android 12+, seule une association système garantit
+                                    // le réveil de l'appli quand elle est fermée.
+                                    if (cdmSupported) {
+                                        val associated = associatedAddresses.any {
+                                            it.equals(link.deviceAddress, ignoreCase = true)
+                                        }
+                                        Text(
+                                            if (associated) "✓ Détection en arrière-plan active"
+                                            else "⚠ À relier pour la détection appli fermée",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (associated) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.error
+                                        )
+                                    }
                                 } else {
                                     Text("Aucun appareil lié",
                                         style = MaterialTheme.typography.bodySmall,
@@ -320,7 +411,9 @@ fun BluetoothSettingsScreen(navController: NavController) {
                             }
                             if (link != null) {
                                 IconButton(onClick = {
+                                    CompanionDeviceHelper.disassociate(context, link.deviceAddress)
                                     BluetoothPreferences.removeLink(context, car.id)
+                                    associatedAddresses = CompanionDeviceHelper.associatedAddresses(context)
                                     refreshLinks()
                                 }) {
                                     Icon(Icons.Filled.LinkOff, "Délier",
@@ -332,7 +425,7 @@ fun BluetoothSettingsScreen(navController: NavController) {
                                     if (!hasBtPermission) {
                                         btPermission?.launchPermissionRequest()
                                     } else {
-                                        carForDevicePicker = car
+                                        linkCar(car)
                                     }
                                 },
                                 shape = RoundedCornerShape(10.dp)
@@ -421,6 +514,50 @@ fun BluetoothSettingsScreen(navController: NavController) {
                                 Text("Désactiver l'optimisation")
                             }
                         }
+                    }
+                }
+
+                // ── Mode fiable (optionnel) ────────────────────────────────
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Filled.Shield, null,
+                                tint = if (reliableMode) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Mode fiable", style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    if (reliableMode) "Actif — une notification permanente est affichée"
+                                    else "Désactivé — aucune notification permanente",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = reliableMode,
+                                onCheckedChange = { enabled ->
+                                    BluetoothPreferences.setReliableModeEnabled(context, enabled)
+                                    reliableMode = enabled
+                                    if (enabled) BluetoothMonitorService.start(context)
+                                    else BluetoothMonitorService.stop(context)
+                                }
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "À n'activer que si votre téléphone rate encore des enregistrements " +
+                            "quand l'appli est fermée. Ajoute une notification permanente discrète, " +
+                            "mais garantit la détection sur les téléphones les plus restrictifs.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
 
