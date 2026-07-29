@@ -51,26 +51,42 @@ object CompanionDeviceHelper {
             .setSingleDevice(false)
             .build()
 
-        cdm.associate(request, object : CompanionDeviceManager.Callback() {
-            // Déprécié sur Android 13+, mais l'implémentation par défaut de
-            // onAssociationPending() l'appelle : une seule surcharge suffit.
-            @Suppress("OVERRIDE_DEPRECATION")
-            override fun onDeviceFound(intentSender: IntentSender) {
-                onIntentSender(intentSender)
-            }
+        // associate() peut lever une SecurityException (permission BLUETOOTH_SCAN
+        // manquante, le sélecteur système scanne les appareils) ou une
+        // IllegalStateException. Sans ce try/catch, l'appli se fermait instantanément.
+        try {
+            cdm.associate(request, object : CompanionDeviceManager.Callback() {
+                // Déprécié sur Android 13+, mais l'implémentation par défaut de
+                // onAssociationPending() l'appelle : une seule surcharge suffit.
+                @Suppress("OVERRIDE_DEPRECATION")
+                override fun onDeviceFound(intentSender: IntentSender) {
+                    onIntentSender(intentSender)
+                }
 
-            override fun onFailure(error: CharSequence?) {
-                onError(error?.toString() ?: "Association annulée")
-            }
-        }, null)
+                override fun onFailure(error: CharSequence?) {
+                    onError(error?.toString() ?: "Association annulée")
+                }
+            }, null)
+        } catch (e: Exception) {
+            Log.e(TAG, "Échec de l'association compagnon", e)
+            onError("Impossible d'ouvrir le sélecteur : ${e.message ?: e.javaClass.simpleName}")
+        }
     }
 
     /**
      * Extrait l'appareil choisi par l'utilisateur depuis le résultat du sélecteur.
      * @return (adresse MAC, nom) ou null.
      */
+    fun parseAssociationResult(data: Intent?): Pair<String, String>? = try {
+        parseAssociationResultInternal(data)
+    } catch (e: Exception) {
+        // Inclut la SecurityException si BLUETOOTH_CONNECT vient d'être révoquée.
+        Log.w(TAG, "Résultat d'association illisible : ${e.message}")
+        null
+    }
+
     @SuppressLint("MissingPermission")
-    fun parseAssociationResult(data: Intent?): Pair<String, String>? {
+    private fun parseAssociationResultInternal(data: Intent?): Pair<String, String>? {
         if (data == null) return null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

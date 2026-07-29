@@ -57,6 +57,20 @@ fun BluetoothSettingsScreen(navController: NavController) {
     }
     var reliableMode by remember { mutableStateOf(BluetoothPreferences.isReliableModeEnabled(context)) }
 
+    // BLUETOOTH_CONNECT est une permission runtime sur Android 12+ (API 31+)
+    val btPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        rememberPermissionState(android.Manifest.permission.BLUETOOTH_CONNECT)
+    } else null
+    val hasBtPermission = btPermission?.status?.isGranted ?: true
+
+    // BLUETOOTH_SCAN est indispensable au sélecteur du Companion Device Manager :
+    // il scanne les appareils, et sans cette permission le système lève une
+    // SecurityException qui fermait l'appli instantanément.
+    val btScanPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        rememberPermissionState(android.Manifest.permission.BLUETOOTH_SCAN)
+    } else null
+    val hasScanPermission = btScanPermission?.status?.isGranted ?: true
+
     // Association via le Companion Device Manager (Android 12+) : c'est elle qui permet
     // au système de réveiller l'appli même fermée, sans notification permanente.
     val cdmSupported = CompanionDeviceHelper.isSupported
@@ -87,6 +101,12 @@ fun BluetoothSettingsScreen(navController: NavController) {
 
     fun linkCar(car: Car) {
         if (cdmSupported) {
+            // Le sélecteur système scanne les appareils : sans BLUETOOTH_SCAN,
+            // l'association échoue. On demande la permission avant d'ouvrir.
+            if (!hasScanPermission) {
+                btScanPermission?.launchPermissionRequest()
+                return
+            }
             pendingCar = car
             associationError = null
             CompanionDeviceHelper.requestAssociation(
@@ -105,12 +125,6 @@ fun BluetoothSettingsScreen(navController: NavController) {
             carForDevicePicker = car
         }
     }
-
-    // BLUETOOTH_CONNECT est une permission runtime sur Android 12+ (API 31+)
-    val btPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        rememberPermissionState(android.Manifest.permission.BLUETOOTH_CONNECT)
-    } else null
-    val hasBtPermission = btPermission?.status?.isGranted ?: true
 
     // Localisation en arrière-plan ("Tout le temps") — indispensable pour capturer le GPS
     // quand la voiture se déconnecte alors que l'appli est fermée (Android 10+)
@@ -169,7 +183,7 @@ fun BluetoothSettingsScreen(navController: NavController) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Bannière permission Bluetooth manquante (Android 12+)
-            if (!hasBtPermission) {
+            if (!hasBtPermission || !hasScanPermission) {
                 Card(
                     shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
@@ -188,15 +202,19 @@ fun BluetoothSettingsScreen(navController: NavController) {
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onErrorContainer)
                             Text(
-                                if (btPermission?.status?.shouldShowRationale == true)
+                                if (btPermission?.status?.shouldShowRationale == true ||
+                                    btScanPermission?.status?.shouldShowRationale == true)
                                     "La permission a été refusée. Accordez-la dans les Paramètres de votre téléphone."
                                 else
-                                    "Nécessaire pour lister vos appareils Bluetooth appairés.",
+                                    "Nécessaire pour lister vos appareils Bluetooth et lier votre voiture.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer
                             )
                             Spacer(Modifier.height(8.dp))
-                            Button(onClick = { btPermission?.launchPermissionRequest() }) {
+                            Button(onClick = {
+                                if (!hasBtPermission) btPermission?.launchPermissionRequest()
+                                else btScanPermission?.launchPermissionRequest()
+                            }) {
                                 Text("Autoriser")
                             }
                         }
