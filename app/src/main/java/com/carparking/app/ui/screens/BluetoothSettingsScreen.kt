@@ -80,18 +80,25 @@ fun BluetoothSettingsScreen(navController: NavController) {
         mutableStateOf(CompanionDeviceHelper.associatedAddresses(context))
     }
 
+    // Appareil choisi dans notre liste, en attente de confirmation système
+    var pendingDevice by remember { mutableStateOf<Pair<String, String>?>(null) }
+
     val associationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
         val car = pendingCar
+        val chosen = pendingDevice
         pendingCar = null
-        if (result.resultCode != Activity.RESULT_OK || car == null) return@rememberLauncherForActivityResult
-        val picked = CompanionDeviceHelper.parseAssociationResult(result.data)
-        if (picked == null) {
-            associationError = "Appareil non reconnu, réessayez."
+        pendingDevice = null
+        if (car == null || chosen == null) return@rememberLauncherForActivityResult
+        if (result.resultCode != Activity.RESULT_OK) {
+            associationError = "Association annulée — la détection appli fermée " +
+                "ne fonctionnera pas tant que la voiture n'est pas associée."
             return@rememberLauncherForActivityResult
         }
-        val (address, name) = picked
+        // On retombe sur l'appareil choisi dans notre liste si le système ne
+        // renvoie pas d'info exploitable.
+        val (address, name) = CompanionDeviceHelper.parseAssociationResult(result.data) ?: chosen
         BluetoothPreferences.saveLink(context, car.id, address, name)
         CompanionDeviceHelper.startObserving(context, address)
         associatedAddresses = CompanionDeviceHelper.associatedAddresses(context)
@@ -99,31 +106,43 @@ fun BluetoothSettingsScreen(navController: NavController) {
         btEnabled = true
     }
 
+    /**
+     * Étape 1 : on affiche TOUJOURS notre propre liste d'appareils appairés.
+     * Elle inclut la voiture même éteinte et hors de portée, contrairement au
+     * sélecteur système qui ne montre que les appareils actuellement détectés.
+     */
     fun linkCar(car: Car) {
-        if (cdmSupported) {
-            // Le sélecteur système scanne les appareils : sans BLUETOOTH_SCAN,
-            // l'association échoue. On demande la permission avant d'ouvrir.
-            if (!hasScanPermission) {
-                btScanPermission?.launchPermissionRequest()
-                return
-            }
-            pendingCar = car
-            associationError = null
-            CompanionDeviceHelper.requestAssociation(
-                context = context,
-                onIntentSender = { sender ->
-                    associationLauncher.launch(IntentSenderRequest.Builder(sender).build())
-                },
-                onError = { msg ->
-                    pendingCar = null
-                    associationError = msg
-                }
-            )
-        } else {
-            // Android 11 : pas d'observation de présence CDM, on retombe sur la
-            // liste des appareils appairés + receiver classique.
-            carForDevicePicker = car
+        associationError = null
+        carForDevicePicker = car
+    }
+
+    /** Étape 2 : confirmation système de l'appareil choisi (crée l'association CDM). */
+    fun confirmDevice(car: Car, address: String, name: String) {
+        if (!cdmSupported) {
+            // Android 11 ou appareil sans CDM : le receiver classique fait le travail.
+            BluetoothPreferences.saveLink(context, car.id, address, name)
+            links = BluetoothPreferences.getLinks(context)
+            btEnabled = true
+            return
         }
+        if (!hasScanPermission) {
+            btScanPermission?.launchPermissionRequest()
+            return
+        }
+        pendingCar = car
+        pendingDevice = address to name
+        CompanionDeviceHelper.requestAssociation(
+            context = context,
+            deviceAddress = address,
+            onIntentSender = { sender ->
+                associationLauncher.launch(IntentSenderRequest.Builder(sender).build())
+            },
+            onError = { msg ->
+                pendingCar = null
+                pendingDevice = null
+                associationError = msg
+            }
+        )
     }
 
     // Localisation en arrière-plan ("Tout le temps") — indispensable pour capturer le GPS
@@ -628,11 +647,10 @@ fun BluetoothSettingsScreen(navController: NavController) {
     carForDevicePicker?.let { car ->
         PairedDeviceListDialog(
             carName = car.name,
+            requiresConfirmation = cdmSupported,
             onSelect = { address, name ->
-                BluetoothPreferences.saveLink(context, car.id, address, name)
-                btEnabled = true
-                refreshLinks()
                 carForDevicePicker = null
+                confirmDevice(car, address, name)
             },
             onDismiss = { carForDevicePicker = null }
         )
@@ -678,6 +696,7 @@ private fun InstructionStep(number: String, text: String) {
 @Composable
 private fun PairedDeviceListDialog(
     carName: String,
+    requiresConfirmation: Boolean,
     onSelect: (String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -713,7 +732,16 @@ private fun PairedDeviceListDialog(
             } else {
                 Text("Sélectionnez l'appareil Bluetooth de $carName :",
                     style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(bottom = 12.dp))
+                    modifier = Modifier.padding(bottom = if (requiresConfirmation) 4.dp else 12.dp))
+                if (requiresConfirmation) {
+                    Text(
+                        "Android vous demandera ensuite de confirmer l'association — " +
+                        "c'est elle qui autorise la détection quand l'appli est fermée.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                }
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     pairedDevices.value.forEach { (name, address) ->
                         ListItem(

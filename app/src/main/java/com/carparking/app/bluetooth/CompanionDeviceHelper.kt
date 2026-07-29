@@ -40,11 +40,21 @@ object CompanionDeviceHelper {
         context.getSystemService(CompanionDeviceManager::class.java)
 
     /**
-     * Ouvre le sélecteur système d'appareils Bluetooth appairés.
+     * Demande l'association d'un appareil **déjà choisi par l'utilisateur** dans notre
+     * propre liste d'appareils appairés.
+     *
+     * Important : on cible une adresse MAC précise avec `setSingleDevice(true)`.
+     * C'est la seule combinaison pour laquelle Android consulte les appareils
+     * **déjà appairés** ; sans elle, le sélecteur système se contente de scanner les
+     * appareils à portée — il fallait donc être dans la voiture pour la configurer.
+     * Ici, le système affiche simplement une confirmation pour l'appareil visé, même
+     * si la voiture est éteinte et hors de portée.
+     *
      * [onIntentSender] reçoit l'IntentSender à lancer via un ActivityResultLauncher.
      */
     fun requestAssociation(
         context: Context,
+        deviceAddress: String,
         onIntentSender: (IntentSender) -> Unit,
         onError: (String) -> Unit
     ) {
@@ -54,8 +64,12 @@ object CompanionDeviceHelper {
             return
         }
         val request = AssociationRequest.Builder()
-            .addDeviceFilter(BluetoothDeviceFilter.Builder().build())
-            .setSingleDevice(false)
+            .addDeviceFilter(
+                BluetoothDeviceFilter.Builder()
+                    .setAddress(deviceAddress)
+                    .build()
+            )
+            .setSingleDevice(true)
             .build()
 
         // associate() peut lever une SecurityException (permission BLUETOOTH_SCAN
