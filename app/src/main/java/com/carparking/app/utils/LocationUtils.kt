@@ -2,8 +2,9 @@ package com.carparking.app.utils
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.location.Geocoder
-import android.os.Build
+import android.net.Uri
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
@@ -64,19 +65,12 @@ object LocationUtils {
 
     fun getAddressFromCoordinates(context: Context, latitude: Double, longitude: Double): String? {
         return try {
-            val geocoder = Geocoder(context, Locale.getDefault())
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                var result: String? = null
-                geocoder.getFromLocation(latitude, longitude, 1) { addresses ->
-                    result = addresses.firstOrNull()?.let { buildAddress(it) }
-                }
-                // Synchronous fallback — GeocodeListener is async on API 33+, use deprecated for sync
-                @Suppress("DEPRECATION")
-                geocoder.getFromLocation(latitude, longitude, 1)?.firstOrNull()?.let { buildAddress(it) }
-            } else {
-                @Suppress("DEPRECATION")
-                geocoder.getFromLocation(latitude, longitude, 1)?.firstOrNull()?.let { buildAddress(it) }
-            }
+            // Version synchrone (dépréciée sur API 33+ mais fonctionnelle) : les appelants
+            // sont déjà hors du thread principal. L'ancienne version lançait en plus une
+            // requête asynchrone dont le résultat était jeté → double appel réseau.
+            @Suppress("DEPRECATION")
+            Geocoder(context, Locale.getDefault())
+                .getFromLocation(latitude, longitude, 1)?.firstOrNull()?.let { buildAddress(it) }
         } catch (e: Exception) {
             null
         }
@@ -97,6 +91,18 @@ object LocationUtils {
             null
         }
     }
+
+    /**
+     * Itinéraire à pied vers la voiture. URL universelle Google Maps : ouverte par
+     * l'appli Maps si elle est installée, sinon par le navigateur. Remplace l'ancien
+     * test resolveActivity(), qui renvoyait toujours null sur Android 11+ (visibilité
+     * des paquets) et faisait donc systématiquement passer par le navigateur.
+     */
+    fun walkingDirectionsIntent(latitude: Double, longitude: Double): Intent =
+        Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse("https://www.google.com/maps/dir/?api=1&destination=$latitude,$longitude&travelmode=walking")
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     private fun buildAddress(address: android.location.Address): String? {
         return buildString {

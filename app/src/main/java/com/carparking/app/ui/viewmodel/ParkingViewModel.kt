@@ -137,6 +137,27 @@ class ParkingViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /**
+     * Stationnement payant : programme une alerte 10 min avant [paidUntilMs]. Elle
+     * remplace le rappel précédent : en changeant reminderWorkerId, l'ancien rappel
+     * devient caduc (ReminderWorker vérifie qu'il est toujours le rappel en vigueur).
+     */
+    fun setPaidUntil(parking: ParkingRecord, carName: String, paidUntilMs: Long, context: Context) =
+        viewModelScope.launch {
+            val alertAt = paidUntilMs - 10 * 60_000L
+            // ponytail: 1 min minimum, sinon le worker peut tourner avant updateParking()
+            // ci-dessous et la garde de ReminderWorker l'ignorerait. Écrire l'id en base
+            // avant enqueue si une précision à la seconde devient nécessaire.
+            val delayMin = ((alertAt - System.currentTimeMillis()) / 60_000L).coerceAtLeast(1L)
+            val hhmm = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                .format(java.util.Date(paidUntilMs))
+            val workerId = ReminderScheduler.schedule(
+                context, carName, delayMin, parking.carId,
+                message = "Le stationnement payé de \"$carName\" expire à $hhmm (dans 10 min)."
+            )
+            repository.updateParking(parking.copy(reminderAt = alertAt, reminderWorkerId = workerId))
+        }
+
     private fun scheduleReminder(
         context: Context,
         carName: String,

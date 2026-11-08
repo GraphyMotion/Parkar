@@ -204,6 +204,10 @@ fun ParkingDetailScreen(navController: NavController, carId: Int) {
                             "%.6f, %.6f".format(parking!!.latitude, parking!!.longitude))
                         if (!parking!!.note.isNullOrEmpty())
                             InfoRow(Icons.Filled.Notes, "Note", parking!!.note!!)
+                        parking!!.reminderAt?.takeIf { it > System.currentTimeMillis() }?.let {
+                            InfoRow(Icons.Filled.Alarm, "Rappel prévu",
+                                SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(it)))
+                        }
                     }
                 }
 
@@ -239,21 +243,37 @@ fun ParkingDetailScreen(navController: NavController, carId: Int) {
                 // ── Boutons ──────────────────────────────────────────────────
                 Button(
                     onClick = {
-                        val geoUri = Uri.parse(
-                            "geo:${parking!!.latitude},${parking!!.longitude}?" +
-                            "q=${parking!!.latitude},${parking!!.longitude}(Ma+voiture)")
-                        val mapIntent = Intent(Intent.ACTION_VIEW, geoUri)
-                            .apply { setPackage("com.google.android.apps.maps") }
-                        if (mapIntent.resolveActivity(context.packageManager) != null)
-                            context.startActivity(mapIntent)
-                        else context.startActivity(Intent(Intent.ACTION_VIEW,
-                            Uri.parse("https://maps.google.com/?q=${parking!!.latitude},${parking!!.longitude}")))
+                        context.startActivity(
+                            LocationUtils.walkingDirectionsIntent(parking!!.latitude, parking!!.longitude)
+                        )
                     },
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     shape = RoundedCornerShape(14.dp)
                 ) {
-                    Icon(Icons.Filled.Navigation, null); Spacer(Modifier.width(10.dp))
-                    Text("Naviguer vers ma voiture", fontWeight = FontWeight.Bold)
+                    Icon(Icons.Filled.DirectionsWalk, null); Spacer(Modifier.width(10.dp))
+                    Text("Itinéraire à pied", fontWeight = FontWeight.Bold)
+                }
+
+                // Stationnement payant : alerte 10 min avant l'échéance
+                OutlinedButton(
+                    onClick = {
+                        val now = Calendar.getInstance()
+                        android.app.TimePickerDialog(context, { _, h, m ->
+                            val target = Calendar.getInstance().apply {
+                                set(Calendar.HOUR_OF_DAY, h); set(Calendar.MINUTE, m)
+                                set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                                // Heure déjà passée aujourd'hui → c'est pour demain
+                                if (timeInMillis <= System.currentTimeMillis()) add(Calendar.DAY_OF_MONTH, 1)
+                            }
+                            parkingVm.setPaidUntil(parking!!, car?.name ?: "votre voiture",
+                                target.timeInMillis, context)
+                        }, now.get(Calendar.HOUR_OF_DAY), now.get(Calendar.MINUTE), true).show()
+                    },
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Icon(Icons.Filled.Timer, null); Spacer(Modifier.width(10.dp))
+                    Text("Stationnement payé jusqu'à…", fontWeight = FontWeight.Medium)
                 }
 
                 OutlinedButton(

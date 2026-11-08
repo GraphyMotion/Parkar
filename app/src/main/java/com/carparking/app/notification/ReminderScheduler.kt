@@ -7,18 +7,22 @@ import androidx.work.workDataOf
 import java.util.concurrent.TimeUnit
 
 object ReminderScheduler {
+    /** @param message texte personnalisé (ex. fin de stationnement payant), sinon texte par défaut. */
     fun schedule(
         context: Context,
         carName: String,
         delayMinutes: Long,
-        notificationId: Int
+        carId: Int,
+        message: String? = null
     ): String {
         val request = OneTimeWorkRequestBuilder<ReminderWorker>()
             .setInitialDelay(delayMinutes, TimeUnit.MINUTES)
             .setInputData(
                 workDataOf(
                     ReminderWorker.KEY_CAR_NAME to carName,
-                    ReminderWorker.KEY_NOTIFICATION_ID to notificationId
+                    ReminderWorker.KEY_NOTIFICATION_ID to carId,
+                    ReminderWorker.KEY_CAR_ID to carId,
+                    ReminderWorker.KEY_MESSAGE to message
                 )
             )
             .build()

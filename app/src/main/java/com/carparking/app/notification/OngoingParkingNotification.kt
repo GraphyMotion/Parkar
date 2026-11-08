@@ -5,9 +5,9 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import androidx.core.app.NotificationCompat
 import com.carparking.app.MainActivity
+import com.carparking.app.utils.LocationUtils
 
 /**
  * Notification persistante affichée pendant tout le stationnement.
@@ -52,27 +52,12 @@ object OngoingParkingNotification {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Action 1 : Naviguer
-        val mapsUri = Uri.parse("geo:$latitude,$longitude?q=$latitude,$longitude(Ma+voiture)")
-        val mapsIntent = Intent(Intent.ACTION_VIEW, mapsUri).apply {
-            setPackage("com.google.android.apps.maps")
-        }
-        val navPending = PendingIntent.getActivity(
+        // Action 1 : itinéraire à pied jusqu'à la voiture
+        val navFinal = PendingIntent.getActivity(
             context, carId + 1000,
-            Intent.createChooser(
-                Intent(Intent.ACTION_VIEW,
-                    Uri.parse("https://maps.google.com/?q=$latitude,$longitude")),
-                "Naviguer"
-            ),
+            LocationUtils.walkingDirectionsIntent(latitude, longitude),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        // Essaie Maps en priorité, sinon browser
-        val navFinal = if (mapsIntent.resolveActivity(context.packageManager) != null) {
-            PendingIntent.getActivity(
-                context, carId + 1000, mapsIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        } else navPending
 
         // Action 2 : J'ai retrouvé
         val arrivedIntent = Intent(ACTION_ARRIVED).apply {
@@ -110,7 +95,7 @@ object OngoingParkingNotification {
             .setAutoCancel(false)
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .addAction(android.R.drawable.ic_menu_directions, "Naviguer", navFinal)
+            .addAction(android.R.drawable.ic_menu_directions, "Itinéraire à pied", navFinal)
             .addAction(android.R.drawable.checkbox_on_background, "J'ai retrouvé", arrivedPending)
             .build()
 

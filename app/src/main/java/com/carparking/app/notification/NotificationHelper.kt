@@ -24,7 +24,7 @@ object NotificationHelper {
         manager.createNotificationChannel(channel)
     }
 
-    fun showParkingReminder(context: Context, carName: String, notificationId: Int) {
+    fun showParkingReminder(context: Context, carName: String, notificationId: Int, message: String? = null) {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
@@ -35,9 +35,9 @@ object NotificationHelper {
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentTitle("Rappel de stationnement")
-            .setContentText("Votre voiture \"$carName\" est garée depuis un moment !")
+            .setContentText(message ?: "Votre voiture \"$carName\" est garée depuis un moment !")
             .setStyle(NotificationCompat.BigTextStyle()
-                .bigText("N'oubliez pas votre voiture \"$carName\" — allez vérifier si le stationnement est toujours valide."))
+                .bigText(message ?: "N'oubliez pas votre voiture \"$carName\" — allez vérifier si le stationnement est toujours valide."))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
